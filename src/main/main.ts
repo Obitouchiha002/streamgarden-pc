@@ -163,7 +163,13 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('before-quit', () => { quitting = true; });
-  app.on('will-quit', () => { globalShortcut.unregisterAll(); stopStreamServer(); });
+  // Windows raises this when the session ends or an installer asks apps to close. Hiding to
+  // the tray here would leave the process alive holding StreamGarden.exe open, which is what
+  // made uninstalling stall — so from this point on, close means quit.
+  // ('session-end' is Windows-only, so it isn't in the cross-platform event union.)
+  (app as unknown as { on(e: string, cb: () => void): void })
+    .on('session-end', () => { quitting = true; app.exit(0); });
+  app.on('will-quit', () => { globalShortcut.unregisterAll(); stopStreamServer(); queue?.killAll(); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 }
 

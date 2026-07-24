@@ -101,6 +101,15 @@ export class DownloadQueue {
     this.procs.delete(id);
   }
 
+  /**
+   * Stop every child before the app goes away. A surviving yt-dlp keeps its executable open
+   * inside the install folder, and Windows won't let an uninstaller delete a file that's in
+   * use — that alone is enough to leave an uninstall half-done.
+   */
+  killAll() {
+    for (const id of [...this.procs.keys()]) this.kill(id);
+  }
+
   private running(): number {
     return [...this.items.values()].filter(
       (i) => i.phase === 'downloading' || i.phase === 'merging' || i.phase === 'converting' || i.phase === 'probing'

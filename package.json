@@ -73,7 +73,13 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "StreamGarden"
+      "shortcutName": "StreamGarden",
+      "include": "resources/installer.nsh",
+      "perMachine": false,
+      "allowElevation": true,
+      "deleteAppDataOnUninstall": false,
+      "uninstallDisplayName": "StreamGarden",
+      "runAfterFinish": true
     }
   }
 }
