@@ -1,0 +1,66 @@
+name: Build Windows installer
+
+# A Windows .exe can only be produced on Windows, so this runs on GitHub's Windows runner.
+# Push a tag (git tag v1.0 && git push --tags) to attach the installer to a Release, or run
+# it by hand from the Actions tab to get the installer as a downloadable artifact.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # yt-dlp and ffmpeg are shipped inside the installer so users never install anything.
+      - name: Fetch yt-dlp and ffmpeg
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path resources/bin | Out-Null
+
+          Write-Host 'Downloading yt-dlp…'
+          Invoke-WebRequest -Uri 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe' `
+                            -OutFile 'resources/bin/yt-dlp.exe'
+
+          Write-Host 'Downloading ffmpeg…'
+          Invoke-WebRequest -Uri 'https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip' `
+                            -OutFile 'ffmpeg.zip'
+          Expand-Archive -Path 'ffmpeg.zip' -DestinationPath 'ffmpeg-tmp' -Force
+          $ff = Get-ChildItem -Path 'ffmpeg-tmp' -Recurse -Filter 'ffmpeg.exe' | Select-Object -First 1
+          Copy-Item $ff.FullName 'resources/bin/ffmpeg.exe'
+          Remove-Item -Recurse -Force 'ffmpeg-tmp', 'ffmpeg.zip'
+
+          Get-ChildItem resources/bin | Format-Table Name, Length
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build and package
+        run: npm run pack:win
+
+      - name: Upload the installer as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamGarden-Windows
+          path: release/*.exe
+          if-no-files-found: error
+
+      # Only when a tag was pushed — attaches the installer to the GitHub Release.
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.exe
