@@ -4,6 +4,9 @@ import * as fs from 'fs';
 import { probe } from './probe';
 import { DownloadQueue } from './queue';
 import { toolStatus } from './tools';
+import { previewUrlFor, stopStreamServer } from './stream';
+import { search } from './search';
+import { checkin, deviceId, deviceName } from './admin';
 import { DEFAULT_SETTINGS, isSupportedUrl } from '../shared/types';
 import type { Settings, DownloadRequest, DownloadItem } from '../shared/types';
 
@@ -160,13 +163,19 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('before-quit', () => { quitting = true; });
-  app.on('will-quit', () => globalShortcut.unregisterAll());
+  app.on('will-quit', () => { globalShortcut.unregisterAll(); stopStreamServer(); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 }
 
 // ── IPC ────────────────────────────────────────────────────────────────────
 ipcMain.handle('tools:status', () => toolStatus());
 ipcMain.handle('probe', (_e, url: string) => probe(url));
+ipcMain.handle('search', (_e, q: string) => search(q));
+ipcMain.handle('preview-url', (_e, url: string) => previewUrlFor(url));
+
+// Device registration — the same dashboard the Android app reports to.
+ipcMain.handle('admin:checkin', () => checkin(settings.profileName));
+ipcMain.handle('admin:device', () => ({ id: deviceId(), name: deviceName() }));
 
 ipcMain.handle('queue:add', (_e, req: DownloadRequest) => queue.add(req));
 ipcMain.handle('queue:all', () => queue.all());

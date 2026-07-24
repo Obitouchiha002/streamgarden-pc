@@ -246,3 +246,82 @@ select.field { cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 :focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; border-radius: 6px; }
+
+/* ── visual trimmer ────────────────────────────────────────────────────── */
+.trim { padding: 16px; margin-top: 14px; }
+.trim-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+
+.trim-stage {
+  position: relative; width: 100%; aspect-ratio: 16/9; max-height: 340px;
+  background: #000; border-radius: 10px; overflow: hidden;
+  display: grid; place-items: center;
+}
+.trim-stage video { width: 100%; height: 100%; object-fit: contain; cursor: pointer; }
+.trim-msg { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; padding: 20px; }
+.trim-msg svg { width: 16px; height: 16px; }
+
+/* The track is the whole clip; the lit band is what will be saved. */
+.trim-track {
+  position: relative; height: 46px; margin-top: 14px;
+  background: var(--surface-2); border-radius: 9px; cursor: pointer;
+  touch-action: none; user-select: none;
+}
+.trim-dim { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,.45); border-radius: 9px; pointer-events: none; }
+.trim-sel {
+  position: absolute; top: 0; bottom: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(174,201,138,.28), rgba(174,201,138,.14));
+  border-top: 2px solid var(--sage); border-bottom: 2px solid var(--sage);
+}
+.trim-play { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); pointer-events: none; border-radius: 2px; }
+
+.trim-grip {
+  position: absolute; top: -4px; bottom: -4px; width: 22px;
+  transform: translateX(-50%); cursor: ew-resize;
+  display: grid; place-items: center; touch-action: none;
+}
+.trim-grip span {
+  display: block; width: 10px; height: 100%; border-radius: 5px;
+  background: var(--sage); box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  border: 1px solid rgba(0,0,0,.25);
+}
+.trim-grip:hover span { background: var(--sage-hi); }
+
+.trim-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.trim-len { font-family: var(--mono); font-size: 12px; color: var(--sage); }
+
+/* Typed times sit beside the handles — both drive the same selection. */
+.trim-inputs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.trim-dash { color: var(--dim); font-size: 12px; }
+.trim-box { display: flex; align-items: center; gap: 7px; }
+.trim-box > span { font-size: 11.5px; color: var(--muted); }
+.trim-box input {
+  width: 78px; text-align: center;
+  font-family: var(--mono); font-size: 12.5px;
+  background: var(--ink-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.trim-box input:focus { border-color: var(--sage-deep); box-shadow: 0 0 0 3px rgba(174,201,138,.13); }
+
+/* ── live search results ───────────────────────────────────────────────── */
+.hits { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.hit {
+  display: flex; align-items: center; gap: 12px; padding: 8px 10px;
+  border-radius: var(--r); border: 1px solid transparent; text-align: left; width: 100%;
+  transition: background .14s, border-color .14s;
+}
+.hit:hover { background: var(--surface); border-color: var(--line); }
+.hit img { width: 84px; height: 48px; object-fit: cover; border-radius: 6px; flex: none; background: var(--surface-2); }
+.hit .ht { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hit .hu { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.hit .hd { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--dim); flex: none; }
+
+/* ── blocked screen ────────────────────────────────────────────────────── */
+.blocked {
+  position: fixed; inset: 0; z-index: 200; background: var(--ink);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; text-align: center; padding: 40px;
+}
+.blocked .code { font-family: var(--mono); font-size: 11px; letter-spacing: .3em; text-transform: uppercase; color: var(--danger); }
+.blocked h2 { font-size: 22px; }
+.blocked p { max-width: 42ch; }

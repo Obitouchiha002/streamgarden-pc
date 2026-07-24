@@ -84,6 +84,11 @@ function single(url: string, j: any): MediaInfo {
     note: 'converted on this PC',
   }));
 
+  // The cover image as its own choice, alongside the video and audio options.
+  const image: MediaFormat[] = j.thumbnail
+    ? [{ id: 'thumbnail', label: 'Thumbnail (cover image)', kind: 'image', ext: 'jpg', note: 'highest resolution available' }]
+    : [];
+
   const subtitles: Subtitle[] = Object.entries(j.subtitles || {}).map(([lang, tracks]: [string, any]) => ({
     lang,
     name: tracks?.[0]?.name || lang,
@@ -95,7 +100,7 @@ function single(url: string, j: any): MediaInfo {
     uploader: j.uploader || j.channel || '',
     duration: j.duration || 0,
     thumbnail: j.thumbnail || '',
-    formats: [...video, ...mp3, ...audio.slice(0, 6)],
+    formats: [...video, ...mp3, ...audio.slice(0, 6), ...image],
     subtitles,
     isPlaylist: false,
   };

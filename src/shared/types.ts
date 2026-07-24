@@ -14,7 +14,7 @@ export type Phase =
 export interface MediaFormat {
   id: string;
   label: string;          // "1080p", "MP3 320 kbps"
-  kind: 'video' | 'audio';
+  kind: 'video' | 'audio' | 'image';
   ext: string;
   height?: number;
   bitrate?: number;
@@ -74,6 +74,8 @@ export interface DownloadItem extends DownloadRequest {
 
 export interface Settings {
   downloadDir: string;
+  /** Shown in the admin dashboard so a PC is recognisable among the phones. */
+  profileName: string;
   maxParallel: number;          // how many downloads run at once
   connectionsPerDownload: number;
   clipboardWatch: boolean;
@@ -86,6 +88,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   downloadDir: '',
+  profileName: '',
   maxParallel: 3,
   connectionsPerDownload: 8,
   clipboardWatch: true,

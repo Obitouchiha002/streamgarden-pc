@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Download, ListVideo, Settings as SettingsIcon, Search, Loader2, X,
-  Film, AlertTriangle, ClipboardCheck, Minus, Square,
+  Film, AlertTriangle, ClipboardCheck, Minus, Square, ShieldAlert,
 } from 'lucide-react';
 import type { DownloadItem, DownloadRequest, MediaInfo, Settings } from '../shared/types';
 import { DEFAULT_SETTINGS } from '../shared/types';
@@ -23,12 +23,19 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [tools, setTools] = useState<{ ytDlp: string | null; ffmpeg: string | null; ready: boolean } | null>(null);
   const [clip, setClip] = useState<string | null>(null);
+  const [hits, setHits] = useState<{ url: string; title: string; uploader: string; duration: number; thumbnail: string }[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [blocked, setBlocked] = useState<null | { reason: string | null; code: string | null; until: string | null }>(null);
 
   // ── boot ────────────────────────────────────────────────────────────────
   useEffect(() => {
     sg.settings.get().then(setSettings);
     sg.queue.all().then(setItems);
     sg.toolStatus().then(setTools);
+    // Register this PC with the same dashboard the phones report to.
+    sg.admin.checkin().then((r) => {
+      if (r.blocked) setBlocked({ reason: r.reason, code: r.code, until: r.until });
+    }).catch(() => { /* fail open — a backend problem must not stop the app */ });
   }, []);
 
   // Live queue updates: one item at a time, patched in place.
@@ -52,6 +59,22 @@ export default function App() {
       setErr(e?.message?.replace(/^Error invoking remote method '[^']+':\s*/, '') || 'Could not read that link.');
     } finally { setBusy(false); }
   }, []);
+
+  // Anything that isn't a link is treated as a search, run a beat after you stop typing.
+  useEffect(() => {
+    const q = url.trim();
+    if (!q || /^https?:\/\//i.test(q)) { setHits([]); setSearching(false); return; }
+    if (q.length < 3) { setHits([]); return; }
+    setSearching(true);
+    let alive = true;
+    const t = setTimeout(() => {
+      sg.search(q)
+        .then((r) => { if (alive) setHits(r); })
+        .catch(() => { if (alive) setHits([]); })
+        .finally(() => { if (alive) setSearching(false); });
+    }, 350);
+    return () => { alive = false; clearTimeout(t); setSearching(false); };
+  }, [url]);
 
   useEffect(() => sg.onClipboardLink((u) => setClip(u)), []);
   useEffect(() => sg.onOpenUrl((u) => { setUrl(u); analyse(u); }), [analyse]);
@@ -78,6 +101,32 @@ export default function App() {
     () => items.filter((i) => ['queued', 'downloading', 'merging', 'converting', 'probing'].includes(i.phase)).length,
     [items]
   );
+
+  if (blocked) {
+    const until = blocked.until ? new Date(blocked.until) : null;
+    return (
+      <>
+        <TitleBar />
+        <div className="blocked">
+          <ShieldAlert style={{ width: 34, height: 34, color: 'var(--danger)' }} />
+          <div className="code">Error {blocked.code || '403'}</div>
+          <h2>Access suspended</h2>
+          <p className="sub">
+            {blocked.reason ? `Your access has been suspended: ${blocked.reason}.`
+                            : 'Your access to this app has been suspended by the administrator.'}
+          </p>
+          <p className="sub">
+            {until ? `Suspension lifts on ${until.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+                   : 'This suspension is permanent.'}
+          </p>
+          <button className="btn btn-ghost btn-sm" onClick={() =>
+            sg.admin.checkin().then((r) => setBlocked(r.blocked ? { reason: r.reason, code: r.code, until: r.until } : null))}>
+            Retry
+          </button>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -111,7 +160,7 @@ export default function App() {
 
               <form className="searchrow" onSubmit={(e) => { e.preventDefault(); analyse(url); }}>
                 <input className="field" value={url} onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://…" spellCheck={false} autoFocus
+                  placeholder="Paste a link, or type what you are looking for…" spellCheck={false} autoFocus
                   onPaste={(e) => {
                     const t = e.clipboardData.getData('text').trim();
                     if (t) { setUrl(t); setTimeout(() => analyse(t), 0); }
@@ -126,6 +175,28 @@ export default function App() {
                 <div className="warn mt">
                   <AlertTriangle />
                   <div>{err}</div>
+                </div>
+              )}
+
+              {(searching || hits.length > 0) && !info && (
+                <div className="hits">
+                  {searching && hits.length === 0 && (
+                    <div className="sub" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 2px' }}>
+                      <Loader2 className="spin" style={{ width: 15, height: 15 }} /> Searching…
+                    </div>
+                  )}
+                  {hits.map((h) => (
+                    <button key={h.url} className="hit" onClick={() => { setUrl(h.url); analyse(h.url); }}>
+                      {h.thumbnail
+                        ? <img src={h.thumbnail} alt="" />
+                        : <span style={{ width: 84, height: 48, borderRadius: 6, background: 'var(--surface-2)', flex: 'none' }} />}
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <span className="ht">{h.title}</span>
+                        <span className="hu">{h.uploader}</span>
+                      </span>
+                      {h.duration > 0 && <span className="hd">{mmss(h.duration)}</span>}
+                    </button>
+                  ))}
                 </div>
               )}
 
@@ -220,6 +291,11 @@ function ToolsWarning({ tools }: { tools: { ytDlp: string | null; ffmpeg: string
       </div>
     </div>
   );
+}
+
+function mmss(sec: number) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
 }
 
 function shortPath(p: string) {

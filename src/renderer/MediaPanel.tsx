@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Film, Music, Scissors, Captions, Check } from 'lucide-react';
+import { Download, Film, Music, Scissors, Captions, Check, Image as ImageIcon } from 'lucide-react';
 import type { DownloadRequest, MediaInfo, Settings } from '../shared/types';
+import { Trimmer } from './Trimmer';
 
 /**
  * Everything you choose before a download starts: which quality, what container, whether to
@@ -17,8 +18,8 @@ export function MediaPanel({ info, settings, onDownload }: {
   const [subs, setSubs] = useState<string[]>([]);
   const [embedSubs, setEmbedSubs] = useState(true);
   const [trimOn, setTrimOn] = useState(false);
-  const [trimStart, setTrimStart] = useState('');
-  const [trimEnd, setTrimEnd] = useState('');
+  // Set by the trimmer; null means "the whole thing".
+  const [range, setRange] = useState<{ start: number; end: number } | null>(null);
   const [organise, setOrganise] = useState(settings.organiseByUploader);
   const [picked, setPicked] = useState<Set<number>>(new Set());
 
@@ -27,10 +28,12 @@ export function MediaPanel({ info, settings, onDownload }: {
     setPicked(new Set());
     setSubs([]);
     setTrimOn(false);
+    setRange(null);
   }, [info]);
 
   const chosen = useMemo(() => info.formats.find((f) => f.id === formatId), [info, formatId]);
   const audioOnly = chosen?.kind === 'audio';
+  const isImage = chosen?.kind === 'image';
 
   // Containers that make sense for what's selected.
   const containers = audioOnly
@@ -101,8 +104,8 @@ export function MediaPanel({ info, settings, onDownload }: {
       audioOnly,
       subtitleLangs: subs,
       embedSubtitles: embedSubs,
-      trimStart: trimOn ? toSeconds(trimStart) : null,
-      trimEnd: trimOn ? toSeconds(trimEnd) : null,
+      trimStart: trimOn && range ? range.start : null,
+      trimEnd: trimOn && range ? range.end : null,
       organiseByUploader: organise,
       thumbnail: info.thumbnail,
       uploader: info.uploader,
@@ -130,7 +133,8 @@ export function MediaPanel({ info, settings, onDownload }: {
           {info.formats.map((f) => (
             <button key={f.id} className={`fmt${f.id === formatId ? ' on' : ''}`} onClick={() => setFormatId(f.id)}>
               {f.kind === 'audio' ? <Music style={{ width: 15, height: 15, color: 'var(--sage)', flex: 'none' }} />
-                                  : <Film style={{ width: 15, height: 15, color: 'var(--sage)', flex: 'none' }} />}
+                : f.kind === 'image' ? <ImageIcon style={{ width: 15, height: 15, color: 'var(--sage)', flex: 'none' }} />
+                : <Film style={{ width: 15, height: 15, color: 'var(--sage)', flex: 'none' }} />}
               <span>
                 <span className="lbl">{f.label}</span>
                 {f.note && <span className="note"> — {f.note}</span>}
@@ -141,7 +145,7 @@ export function MediaPanel({ info, settings, onDownload }: {
           ))}
         </div>
 
-        <div className="opts">
+        <div className="opts" hidden={isImage}>
           <div className="opt">
             <label>Save as</label>
             <select className="field" value={container} onChange={(e) => setContainer(e.target.value as DownloadRequest['container'])}>
@@ -175,20 +179,12 @@ export function MediaPanel({ info, settings, onDownload }: {
           </label>
         )}
 
-        <label className="check" style={{ marginTop: 6 }}>
-          <input type="checkbox" checked={trimOn} onChange={(e) => setTrimOn(e.target.checked)} />
+        <label className="check" style={{ marginTop: 6 }} hidden={isImage}>
+          <input type="checkbox" checked={trimOn} onChange={(e) => { setTrimOn(e.target.checked); if (!e.target.checked) setRange(null); }} />
           <span><Scissors style={{ width: 13, height: 13, display: 'inline', verticalAlign: -2 }} /> Only keep a section</span>
         </label>
 
-        {trimOn && (
-          <div className="gap" style={{ marginTop: 8 }}>
-            <input className="field" style={{ width: 130 }} value={trimStart} onChange={(e) => setTrimStart(e.target.value)}
-              placeholder="from 1:30" />
-            <input className="field" style={{ width: 130 }} value={trimEnd} onChange={(e) => setTrimEnd(e.target.value)}
-              placeholder="to 3:45" />
-            <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--dim)' }}>m:ss or h:mm:ss — leave blank for the end</span>
-          </div>
-        )}
+        {trimOn && !isImage && <Trimmer url={info.url} duration={info.duration} onChange={setRange} />}
       </div>
     </section>
   );
@@ -201,12 +197,4 @@ function hhmm(sec: number) {
 }
 function mb(b: number) {
   return b > 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1)} GB` : `${Math.round(b / 1024 ** 2)} MB`;
-}
-/** "1:30" or "0:01:30" or "90" → seconds. Returns null when it can't be read. */
-function toSeconds(v: string): number | null {
-  const t = v.trim();
-  if (!t) return null;
-  const parts = t.split(':').map(Number);
-  if (parts.some(isNaN)) return null;
-  return parts.reduce((acc, p) => acc * 60 + p, 0);
 }

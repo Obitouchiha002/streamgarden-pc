@@ -140,6 +140,17 @@ export class DownloadQueue {
       '--add-metadata',
     ];
 
+    // The cover image: fetch the picture itself, skip every media step.
+    if (item.formatId === 'thumbnail') {
+      return [
+        item.url,
+        '-o', this.outputTemplate(item),
+        '--newline', '--no-warnings', '--no-playlist',
+        '--write-thumbnail', '--convert-thumbnails', 'jpg',
+        '--skip-download',
+      ];
+    }
+
     // MP3 is produced locally; everything else asks the site for a format id.
     if (item.formatId.startsWith('mp3-')) {
       const kbps = item.formatId.split('-')[1] || '192';

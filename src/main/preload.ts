@@ -11,6 +11,21 @@ const api = {
 
   probe: (url: string): Promise<MediaInfo> => ipcRenderer.invoke('probe', url),
 
+  /** Type-ahead search; results come back fast enough to run on each keystroke. */
+  search: (q: string): Promise<{ url: string; title: string; uploader: string; duration: number; thumbnail: string }[]> =>
+    ipcRenderer.invoke('search', q),
+
+  /** A local URL a <video> can scrub without downloading the file. */
+  previewUrl: (url: string): Promise<string> => ipcRenderer.invoke('preview-url', url),
+
+  admin: {
+    checkin: (): Promise<{
+      blocked: boolean; reason: string | null; code: string | null; until: string | null;
+      premium: boolean; latest_version: string | null; update_url: string | null; update_note: string | null;
+    }> => ipcRenderer.invoke('admin:checkin'),
+    device: (): Promise<{ id: string; name: string }> => ipcRenderer.invoke('admin:device'),
+  },
+
   queue: {
     add: (req: DownloadRequest): Promise<DownloadItem> => ipcRenderer.invoke('queue:add', req),
     all: (): Promise<DownloadItem[]> => ipcRenderer.invoke('queue:all'),
