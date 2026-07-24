@@ -24,6 +24,8 @@ const api = {
       premium: boolean; latest_version: string | null; update_url: string | null; update_note: string | null;
     }> => ipcRenderer.invoke('admin:checkin'),
     device: (): Promise<{ id: string; name: string }> => ipcRenderer.invoke('admin:device'),
+    claimName: (name: string): Promise<'ok' | 'taken' | 'invalid' | 'offline'> =>
+      ipcRenderer.invoke('admin:claimName', name),
   },
 
   queue: {

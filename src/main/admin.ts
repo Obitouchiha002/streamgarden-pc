@@ -14,7 +14,7 @@ const SUPABASE_URL = 'https://befdjbbzuyzjlyrckkxj.supabase.co';
 const ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlZmRqYmJ6dXl6amx5cmNra3hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwMDIyNjYsImV4cCI6MjA5OTU3ODI2Nn0.OLJterEVLS2zIKsFv2tAZmgU0TxwXxRbfeE_sEEkHj4';
 
-export const APP_VERSION = '1.1';
+export const APP_VERSION = '1.2';
 
 export interface CheckinResult {
   blocked: boolean;
@@ -79,6 +79,19 @@ function rpc<T>(fn: string, body: Record<string, unknown>): Promise<T> {
     req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
     req.end(payload);
   });
+}
+
+/**
+ * Claim a display name. Names are unique across every device, phone and PC alike, and the
+ * backend decides — two people could otherwise pick the same one at the same moment.
+ */
+export async function claimName(name: string): Promise<'ok' | 'taken' | 'invalid' | 'offline'> {
+  try {
+    const r = await rpc<string>('claim_name', { p_id: deviceId(), p_name: name.trim() });
+    return (r === 'ok' || r === 'taken' || r === 'invalid') ? r : 'offline';
+  } catch {
+    return 'offline';
+  }
 }
 
 /** Register this PC and read back its status. Never throws. */

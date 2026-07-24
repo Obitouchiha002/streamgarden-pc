@@ -27,6 +27,8 @@ export default function App() {
   const [searching, setSearching] = useState(false);
   const [blocked, setBlocked] = useState<null | { reason: string | null; code: string | null; until: string | null }>(null);
   const [nameInput, setNameInput] = useState('');
+  const [nameErr, setNameErr] = useState('');
+  const [claiming, setClaiming] = useState(false);
   // Guards the welcome screen: without it the app flashes it before settings arrive.
   const [loaded, setLoaded] = useState(false);
 
@@ -95,11 +97,17 @@ export default function App() {
     return () => media.removeEventListener('change', apply);
   }, [theme]);
 
+  // Names are unique across every device, so the backend has the final say.
   const saveProfile = async () => {
     const n = nameInput.trim();
     if (!n) return;
+    setClaiming(true); setNameErr('');
+    const r = await sg.admin.claimName(n).catch(() => 'offline' as const);
+    setClaiming(false);
+    if (r === 'taken') { setNameErr('Someone is already using that name. Try another.'); return; }
+    if (r === 'invalid') { setNameErr('Please use 1–40 characters.'); return; }
+    // 'offline' still lets you in — the name is kept and claimed on the next launch.
     setSettings(await sg.settings.set({ ...settings, profileName: n }));
-    // Register again so the dashboard shows the chosen name straight away.
     sg.admin.checkin().catch(() => { /* fail open */ });
   };
 
@@ -156,17 +164,18 @@ export default function App() {
           <p className="sub">What should we call this computer?</p>
           <input
             className="field" autoFocus maxLength={40} value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
+            onChange={(e) => { setNameInput(e.target.value); setNameErr(''); }}
             onKeyDown={(e) => { if (e.key === 'Enter') saveProfile(); }}
             placeholder="Your name"
-            style={{ maxWidth: 300, textAlign: 'center' }}
+            style={{ maxWidth: 300, textAlign: 'center', borderColor: nameErr ? 'var(--danger)' : undefined }}
           />
-          <button className="btn btn-primary" disabled={!nameInput.trim()} onClick={saveProfile}>
-            Continue
+          {nameErr && <p className="sub" style={{ color: 'var(--danger)', marginTop: 0 }}>{nameErr}</p>}
+          <button className="btn btn-primary" disabled={claiming || !nameInput.trim()} onClick={saveProfile}>
+            {claiming ? <><Loader2 className="spin" /> Checking…</> : 'Continue'}
           </button>
           <p className="sub" style={{ fontSize: 11.5, color: 'var(--dim)', maxWidth: '34ch' }}>
-            Just a name — no account, no password, no email. Nothing about what you search
-            for or download is ever sent anywhere.
+            Just a name — no account, no password, no email. Each name can only be used once.
+            Nothing about what you search for or download is ever sent anywhere.
           </p>
         </div>
       </>

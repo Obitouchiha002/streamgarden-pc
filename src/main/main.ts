@@ -6,7 +6,7 @@ import { DownloadQueue } from './queue';
 import { toolStatus } from './tools';
 import { previewUrlFor, stopStreamServer } from './stream';
 import { search } from './search';
-import { checkin, deviceId, deviceName } from './admin';
+import { checkin, claimName, deviceId, deviceName } from './admin';
 import { DEFAULT_SETTINGS, isSupportedUrl } from '../shared/types';
 import type { Settings, DownloadRequest, DownloadItem } from '../shared/types';
 
@@ -176,6 +176,7 @@ ipcMain.handle('preview-url', (_e, url: string) => previewUrlFor(url));
 // Device registration — the same dashboard the Android app reports to.
 ipcMain.handle('admin:checkin', () => checkin(settings.profileName));
 ipcMain.handle('admin:device', () => ({ id: deviceId(), name: deviceName() }));
+ipcMain.handle('admin:claimName', (_e, name: string) => claimName(name));
 
 ipcMain.handle('queue:add', (_e, req: DownloadRequest) => queue.add(req));
 ipcMain.handle('queue:all', () => queue.all());
