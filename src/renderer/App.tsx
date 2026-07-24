@@ -26,10 +26,13 @@ export default function App() {
   const [hits, setHits] = useState<{ url: string; title: string; uploader: string; duration: number; thumbnail: string }[]>([]);
   const [searching, setSearching] = useState(false);
   const [blocked, setBlocked] = useState<null | { reason: string | null; code: string | null; until: string | null }>(null);
+  const [nameInput, setNameInput] = useState('');
+  // Guards the welcome screen: without it the app flashes it before settings arrive.
+  const [loaded, setLoaded] = useState(false);
 
   // ── boot ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    sg.settings.get().then(setSettings);
+    sg.settings.get().then((s2) => { setSettings(s2); setLoaded(true); });
     sg.queue.all().then(setItems);
     sg.toolStatus().then(setTools);
     // Register this PC with the same dashboard the phones report to.
@@ -92,6 +95,14 @@ export default function App() {
     return () => media.removeEventListener('change', apply);
   }, [theme]);
 
+  const saveProfile = async () => {
+    const n = nameInput.trim();
+    if (!n) return;
+    setSettings(await sg.settings.set({ ...settings, profileName: n }));
+    // Register again so the dashboard shows the chosen name straight away.
+    sg.admin.checkin().catch(() => { /* fail open */ });
+  };
+
   const enqueue = async (req: DownloadRequest) => {
     await sg.queue.add(req);
     setTab('queue');
@@ -123,6 +134,40 @@ export default function App() {
             sg.admin.checkin().then((r) => setBlocked(r.blocked ? { reason: r.reason, code: r.code, until: r.until } : null))}>
             Retry
           </button>
+        </div>
+      </>
+    );
+  }
+
+  // First launch: ask what to call this machine, once. It's the only thing collected, and
+  // it's what makes the dashboard readable instead of a list of hostnames.
+  if (loaded && !settings.profileName) {
+    return (
+      <>
+        <TitleBar />
+        <div className="blocked">
+          <span className="mark" style={{ width: 46, height: 46, borderRadius: 14 }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#12160B" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+              style={{ width: 24, height: 24 }}>
+              <path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M5 21h14" />
+            </svg>
+          </span>
+          <h2>Welcome to StreamGarden</h2>
+          <p className="sub">What should we call this computer?</p>
+          <input
+            className="field" autoFocus maxLength={40} value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveProfile(); }}
+            placeholder="Your name"
+            style={{ maxWidth: 300, textAlign: 'center' }}
+          />
+          <button className="btn btn-primary" disabled={!nameInput.trim()} onClick={saveProfile}>
+            Continue
+          </button>
+          <p className="sub" style={{ fontSize: 11.5, color: 'var(--dim)', maxWidth: '34ch' }}>
+            Just a name — no account, no password, no email. Nothing about what you search
+            for or download is ever sent anywhere.
+          </p>
         </div>
       </>
     );
