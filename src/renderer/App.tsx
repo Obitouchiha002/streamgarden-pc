@@ -4,13 +4,40 @@ import {
   Film, AlertTriangle, ClipboardCheck, Minus, Square, ShieldAlert,
 } from 'lucide-react';
 import type { DownloadItem, DownloadRequest, MediaInfo, Settings } from '../shared/types';
-import { DEFAULT_SETTINGS } from '../shared/types';
+import { DEFAULT_SETTINGS, isSupportedUrl } from '../shared/types';
 import { QueueView } from './Queue';
 import { SettingsView } from './SettingsView';
 import { MediaPanel } from './MediaPanel';
 
 const sg = window.sg;
 type Tab = 'get' | 'queue' | 'settings';
+
+/**
+ * Pull every supported link out of a blob of text. Pasting ten links at once — whether
+ * they arrive on separate lines or all on one, since a single-line input flattens newlines
+ * into spaces — is the whole point of batch mode, so we scan rather than parse one URL.
+ * Deduplicated, order preserved.
+ */
+function extractUrls(text: string): string[] {
+  const found = text.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of found) {
+    const u = raw.replace(/[.,)\]]+$/, '');   // trailing punctuation isn't part of the link
+    if (isSupportedUrl(u) && !seen.has(u)) { seen.add(u); out.push(u); }
+  }
+  return out;
+}
+
+/** A short, readable label for a queued batch link before its real title is known. */
+function shortUrl(u: string): string {
+  try {
+    const { hostname, pathname, searchParams } = new URL(u);
+    const host = hostname.replace(/^www\./, '');
+    const id = searchParams.get('v') || pathname.split('/').filter(Boolean).pop() || '';
+    return id ? `${host} · ${id}` : host;
+  } catch { return u; }
+}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('get');
@@ -29,8 +56,13 @@ export default function App() {
   const [nameInput, setNameInput] = useState('');
   const [nameErr, setNameErr] = useState('');
   const [claiming, setClaiming] = useState(false);
+  const [batchKind, setBatchKind] = useState<'video' | 'mp3'>('video');
   // Guards the welcome screen: without it the app flashes it before settings arrive.
   const [loaded, setLoaded] = useState(false);
+
+  // More than one link in the box means batch mode: skip the per-link format picker and
+  // queue them all at one chosen quality.
+  const batchUrls = useMemo(() => extractUrls(url), [url]);
 
   // ── boot ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -66,8 +98,10 @@ export default function App() {
   }, []);
 
   // Anything that isn't a link is treated as a search, run a beat after you stop typing.
+  // Two or more links is a batch, not a search query.
   useEffect(() => {
     const q = url.trim();
+    if (batchUrls.length >= 2) { setHits([]); setSearching(false); return; }
     if (!q || /^https?:\/\//i.test(q)) { setHits([]); setSearching(false); return; }
     if (q.length < 3) { setHits([]); return; }
     setSearching(true);
@@ -79,7 +113,7 @@ export default function App() {
         .finally(() => { if (alive) setSearching(false); });
     }, 350);
     return () => { alive = false; clearTimeout(t); setSearching(false); };
-  }, [url]);
+  }, [url, batchUrls.length]);
 
   useEffect(() => sg.onClipboardLink((u) => setClip(u)), []);
   useEffect(() => sg.onOpenUrl((u) => { setUrl(u); analyse(u); }), [analyse]);
@@ -113,6 +147,32 @@ export default function App() {
 
   const enqueue = async (req: DownloadRequest) => {
     await sg.queue.add(req);
+    setTab('queue');
+  };
+
+  // Queue every link at once. No probing — 'best' and 'mp3-192' don't need a format list,
+  // so ten links become ten queued items instantly and the queue runs them maxParallel at
+  // a time. yt-dlp names each file from its real title; the queue row shows the link until
+  // the download starts filling it in.
+  const enqueueBatch = async () => {
+    const audio = batchKind === 'mp3';
+    for (const u of batchUrls) {
+      await sg.queue.add({
+        url: u,
+        title: shortUrl(u),
+        // 'bestvideo' (not 'best') so the queue merges the highest-resolution stream with
+        // audio — 'best' alone is the muxed file, which YouTube caps at 720p.
+        formatId: audio ? 'mp3-192' : 'bestvideo',
+        container: audio ? 'mp3' : (settings.defaultContainer === 'auto' ? 'mp4' : settings.defaultContainer),
+        audioOnly: audio,
+        subtitleLangs: [],
+        embedSubtitles: false,
+        trimStart: null,
+        trimEnd: null,
+        organiseByUploader: settings.organiseByUploader,
+      });
+    }
+    setUrl('');
     setTab('queue');
   };
 
@@ -212,18 +272,50 @@ export default function App() {
               <h1>Get media</h1>
               <p className="sub">Paste a link from YouTube, Instagram, TikTok, X, Vimeo, Reddit and more.</p>
 
-              <form className="searchrow" onSubmit={(e) => { e.preventDefault(); analyse(url); }}>
+              <form className="searchrow"
+                onSubmit={(e) => { e.preventDefault(); if (batchUrls.length >= 2) enqueueBatch(); else analyse(url); }}>
                 <input className="field" value={url} onChange={(e) => setUrl(e.target.value)}
-                  placeholder="Paste a link, or type what you are looking for…" spellCheck={false} autoFocus
+                  placeholder="Paste a link (or ten), or type what you are looking for…" spellCheck={false} autoFocus
                   onPaste={(e) => {
                     const t = e.clipboardData.getData('text').trim();
-                    if (t) { setUrl(t); setTimeout(() => analyse(t), 0); }
+                    if (!t) return;
+                    // Several links pasted at once? Let it become batch mode instead of probing one.
+                    if (extractUrls(t).length >= 2) { setUrl(t); return; }
+                    setUrl(t); setTimeout(() => analyse(t), 0);
                   }} />
-                <button className="btn btn-primary" disabled={busy || !url.trim()}>
-                  {busy ? <Loader2 className="spin" /> : <Search />}
-                  {busy ? 'Reading…' : 'Fetch'}
+                <button className="btn btn-primary" disabled={busy || (batchUrls.length < 2 && !url.trim())}>
+                  {busy ? <Loader2 className="spin" /> : batchUrls.length >= 2 ? <ListVideo /> : <Search />}
+                  {busy ? 'Reading…' : batchUrls.length >= 2 ? `Download ${batchUrls.length}` : 'Fetch'}
                 </button>
               </form>
+
+              {batchUrls.length >= 2 && (
+                <div className="batch mt">
+                  <div className="batch-head">
+                    <span className="batch-count"><ListVideo style={{ width: 16, height: 16 }} /> {batchUrls.length} links ready</span>
+                    <div className="seg">
+                      <button type="button" className={batchKind === 'video' ? 'on' : ''} onClick={() => setBatchKind('video')}>Video</button>
+                      <button type="button" className={batchKind === 'mp3' ? 'on' : ''} onClick={() => setBatchKind('mp3')}>MP3</button>
+                    </div>
+                  </div>
+                  <ul className="batch-list">
+                    {batchUrls.map((u) => (
+                      <li key={u} title={u}>{shortUrl(u)}</li>
+                    ))}
+                  </ul>
+                  <div className="batch-foot">
+                    <span className="sub" style={{ fontSize: 12 }}>
+                      {batchKind === 'mp3' ? 'MP3 audio, 192 kbps' : 'Best quality, merged to video'} · {settings.maxParallel} at a time
+                    </span>
+                    <div className="gap">
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setUrl('')}>Clear</button>
+                      <button type="button" className="btn btn-primary btn-sm" onClick={enqueueBatch}>
+                        <Download style={{ width: 15, height: 15 }} /> Download all {batchUrls.length}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {err && (
                 <div className="warn mt">
@@ -256,7 +348,7 @@ export default function App() {
 
               {info && <MediaPanel info={info} settings={settings} onDownload={enqueue} />}
 
-              {!info && !busy && !err && (
+              {!info && !busy && !err && batchUrls.length < 2 && (
                 <div className="empty mt">
                   <Film />
                   <div>Nothing loaded yet — paste a link above.</div>
