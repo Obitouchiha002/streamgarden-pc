@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Download, ListVideo, Settings as SettingsIcon, Search, Loader2, X,
-  Film, AlertTriangle, ClipboardCheck, Minus, Square, ShieldAlert,
+  Film, AlertTriangle, ClipboardCheck, Minus, Square, ShieldAlert, Lock, Sparkles, Check,
 } from 'lucide-react';
 import type { DownloadItem, DownloadRequest, MediaInfo, Settings } from '../shared/types';
 import { DEFAULT_SETTINGS, isSupportedUrl } from '../shared/types';
@@ -52,10 +52,12 @@ export default function App() {
   const [clip, setClip] = useState<string | null>(null);
   const [hits, setHits] = useState<{ url: string; title: string; uploader: string; duration: number; thumbnail: string }[]>([]);
   const [searching, setSearching] = useState(false);
-  const [blocked, setBlocked] = useState<null | { reason: string | null; code: string | null; until: string | null }>(null);
+  const [blocked, setBlocked] = useState<null | { reason: string | null; code: string | null; until: string | null; updateUrl?: string | null }>(null);
   const [nameInput, setNameInput] = useState('');
   const [nameErr, setNameErr] = useState('');
   const [claiming, setClaiming] = useState(false);
+  const [premium, setPremium] = useState(false);
+  const [upsell, setUpsell] = useState(false);
   const [batchKind, setBatchKind] = useState<'video' | 'mp3'>('video');
   // Guards the welcome screen: without it the app flashes it before settings arrive.
   const [loaded, setLoaded] = useState(false);
@@ -71,7 +73,8 @@ export default function App() {
     sg.toolStatus().then(setTools);
     // Register this PC with the same dashboard the phones report to.
     sg.admin.checkin().then((r) => {
-      if (r.blocked) setBlocked({ reason: r.reason, code: r.code, until: r.until });
+      if (r.blocked) setBlocked({ reason: r.reason, code: r.code, until: r.until, updateUrl: r.update_url });
+      setPremium(r.premium);
     }).catch(() => { /* fail open — a backend problem must not stop the app */ });
   }, []);
 
@@ -156,13 +159,15 @@ export default function App() {
   // the download starts filling it in.
   const enqueueBatch = async () => {
     const audio = batchKind === 'mp3';
+    if (audio && !premium) { setBatchKind('video'); return; }   // MP3 is premium
     for (const u of batchUrls) {
       await sg.queue.add({
         url: u,
         title: shortUrl(u),
         // 'bestvideo' (not 'best') so the queue merges the highest-resolution stream with
-        // audio — 'best' alone is the muxed file, which YouTube caps at 720p.
-        formatId: audio ? 'mp3-192' : 'bestvideo',
+        // audio — 'best' alone is the muxed file, which YouTube caps at 720p. Free plan is
+        // held to 720p; premium gets the lot.
+        formatId: audio ? 'mp3-192' : (premium ? 'bestvideo' : 'bestvideo[height<=720]'),
         container: audio ? 'mp3' : (settings.defaultContainer === 'auto' ? 'mp4' : settings.defaultContainer),
         audioOnly: audio,
         subtitleLangs: [],
@@ -183,6 +188,34 @@ export default function App() {
 
   if (blocked) {
     const until = blocked.until ? new Date(blocked.until) : null;
+
+    // 426 = this build is below the required minimum. Not a suspension — an update prompt.
+    if (blocked.code === '426') {
+      const site = blocked.updateUrl || 'https://streamgd.lzworth.in';
+      return (
+        <>
+          <TitleBar />
+          <div className="blocked">
+            <span className="mark" style={{ width: 48, height: 48, borderRadius: 14 }}>
+              <Sparkles style={{ width: 24, height: 24, color: '#12160B' }} />
+            </span>
+            <h2>Time to update</h2>
+            <p className="sub" style={{ maxWidth: '40ch' }}>
+              A newer version of StreamGarden is out. This one has stopped working — grab the
+              latest from the website to keep going.
+            </p>
+            <button className="btn btn-primary" onClick={() => sg.openExternal(site)}>
+              <Download style={{ width: 15, height: 15 }} /> Update now
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() =>
+              sg.admin.checkin().then((r) => setBlocked(r.blocked ? { reason: r.reason, code: r.code, until: r.until, updateUrl: r.update_url } : null))}>
+              I've updated — retry
+            </button>
+          </div>
+        </>
+      );
+    }
+
     return (
       <>
         <TitleBar />
@@ -295,7 +328,10 @@ export default function App() {
                     <span className="batch-count"><ListVideo style={{ width: 16, height: 16 }} /> {batchUrls.length} links ready</span>
                     <div className="seg">
                       <button type="button" className={batchKind === 'video' ? 'on' : ''} onClick={() => setBatchKind('video')}>Video</button>
-                      <button type="button" className={batchKind === 'mp3' ? 'on' : ''} onClick={() => setBatchKind('mp3')}>MP3</button>
+                      <button type="button" className={batchKind === 'mp3' ? 'on' : ''}
+                        onClick={() => premium ? setBatchKind('mp3') : setUpsell(true)}>
+                        MP3 {!premium && <Lock style={{ width: 11, height: 11, verticalAlign: -1 }} />}
+                      </button>
                     </div>
                   </div>
                   <ul className="batch-list">
@@ -305,7 +341,9 @@ export default function App() {
                   </ul>
                   <div className="batch-foot">
                     <span className="sub" style={{ fontSize: 12 }}>
-                      {batchKind === 'mp3' ? 'MP3 audio, 192 kbps' : 'Best quality, merged to video'} · {settings.maxParallel} at a time
+                      {batchKind === 'mp3'
+                        ? 'MP3 audio, 192 kbps'
+                        : premium ? 'Best quality, merged to video' : 'Up to 720p (free plan)'} · {settings.maxParallel} at a time
                     </span>
                     <div className="gap">
                       <button type="button" className="btn btn-ghost btn-sm" onClick={() => setUrl('')}>Clear</button>
@@ -346,7 +384,7 @@ export default function App() {
                 </div>
               )}
 
-              {info && <MediaPanel info={info} settings={settings} onDownload={enqueue} />}
+              {info && <MediaPanel info={info} settings={settings} premium={premium} onUpsell={() => setUpsell(true)} onDownload={enqueue} />}
 
               {!info && !busy && !err && batchUrls.length < 2 && (
                 <div className="empty mt">
@@ -382,6 +420,33 @@ export default function App() {
               Fetch
             </button>
             <button className="btn-icon" onClick={() => setClip(null)} aria-label="Dismiss"><X /></button>
+          </div>
+        </div>
+      )}
+
+      {upsell && (
+        <div className="modal-veil" onClick={() => setUpsell(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <button className="btn-icon modal-x" onClick={() => setUpsell(false)} aria-label="Close"><X /></button>
+            <span className="mark" style={{ width: 44, height: 44, borderRadius: 13 }}>
+              <Sparkles style={{ width: 22, height: 22, color: '#12160B' }} />
+            </span>
+            <h2 style={{ marginTop: 12 }}>A premium feature</h2>
+            <p className="sub" style={{ maxWidth: '34ch' }}>
+              The free plan downloads video up to 720p. Premium unlocks the full quality your
+              links offer — 1080p, 4K — and MP3 audio.
+            </p>
+            <ul className="perk">
+              <li><Check style={{ width: 15, height: 15, color: 'var(--sage)' }} /> Full resolution, up to 4K</li>
+              <li><Check style={{ width: 15, height: 15, color: 'var(--sage)' }} /> MP3 audio downloads</li>
+              <li><Check style={{ width: 15, height: 15, color: 'var(--sage)' }} /> No filename branding</li>
+            </ul>
+            <div className="gap" style={{ marginTop: 16 }}>
+              <button className="btn btn-primary" onClick={() => { sg.openExternal('https://streamgd.lzworth.in'); setUpsell(false); }}>
+                <Sparkles style={{ width: 15, height: 15 }} /> Learn more
+              </button>
+              <button className="btn btn-ghost" onClick={() => setUpsell(false)}>Not now</button>
+            </div>
           </div>
         </div>
       )}

@@ -1,16 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Film, Music, Scissors, Captions, Check, Image as ImageIcon } from 'lucide-react';
-import type { DownloadRequest, MediaInfo, Settings } from '../shared/types';
+import { Download, Film, Music, Scissors, Captions, Check, Image as ImageIcon, Lock } from 'lucide-react';
+import type { DownloadRequest, MediaFormat, MediaInfo, Settings } from '../shared/types';
 import { Trimmer } from './Trimmer';
+
+/** Free plan ceiling: video is held to 720p, and MP3 is a premium output. */
+const FREE_MAX_HEIGHT = 720;
+function locked(f: MediaFormat, premium: boolean): boolean {
+  if (premium) return false;
+  return f.kind === 'video' && (f.height ?? 0) > FREE_MAX_HEIGHT;
+}
 
 /**
  * Everything you choose before a download starts: which quality, what container, whether to
  * pull subtitles, and whether to keep only a section. Playlists show their entries with
  * checkboxes instead — nothing is queued until you pick.
  */
-export function MediaPanel({ info, settings, onDownload }: {
+export function MediaPanel({ info, settings, premium, onUpsell, onDownload }: {
   info: MediaInfo;
   settings: Settings;
+  premium: boolean;
+  onUpsell: () => void;
   onDownload: (r: DownloadRequest) => void;
 }) {
   const [formatId, setFormatId] = useState('');
@@ -24,12 +33,15 @@ export function MediaPanel({ info, settings, onDownload }: {
   const [picked, setPicked] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    setFormatId(info.formats[0]?.id ?? '');
+    // Default to the best format the plan actually allows, so a free user doesn't land on a
+    // locked 4K row.
+    const first = info.formats.find((f) => !locked(f, premium)) ?? info.formats[0];
+    setFormatId(first?.id ?? '');
     setPicked(new Set());
     setSubs([]);
     setTrimOn(false);
     setRange(null);
-  }, [info]);
+  }, [info, premium]);
 
   const chosen = useMemo(() => info.formats.find((f) => f.id === formatId), [info, formatId]);
   const audioOnly = chosen?.kind === 'audio';
@@ -54,7 +66,8 @@ export function MediaPanel({ info, settings, onDownload }: {
       [...picked].sort((a, b) => a - b).forEach((i) => {
         const e = entries[i];
         onDownload({
-          url: e.url, title: e.title, formatId: 'best', container, audioOnly: false,
+          url: e.url, title: e.title,
+          formatId: premium ? 'best' : 'best[height<=720]', container, audioOnly: false,
           subtitleLangs: [], embedSubtitles: false, trimStart: null, trimEnd: null,
           organiseByUploader: organise, uploader: info.uploader,
         });
@@ -130,26 +143,40 @@ export function MediaPanel({ info, settings, onDownload }: {
       <div>
         <div className="eyebrow">Quality</div>
         <div className="fmt-list mt" style={{ marginTop: 9 }}>
-          {info.formats.map((f) => (
-            <button key={f.id} className={`fmt${f.id === formatId ? ' on' : ''}`} onClick={() => setFormatId(f.id)}>
-              {f.kind === 'audio' ? <Music style={{ width: 15, height: 15, color: 'var(--sage)', flex: 'none' }} />
-                : f.kind === 'image' ? <ImageIcon style={{ width: 15, height: 15, color: 'var(--sage)', flex: 'none' }} />
-                : <Film style={{ width: 15, height: 15, color: 'var(--sage)', flex: 'none' }} />}
-              <span>
-                <span className="lbl">{f.label}</span>
-                {f.note && <span className="note"> — {f.note}</span>}
-              </span>
-              {f.id === formatId && <Check style={{ width: 14, height: 14, color: 'var(--sage)' }} />}
-              <span className="size">{f.filesize ? mb(f.filesize) : f.ext.toUpperCase()}</span>
-            </button>
-          ))}
+          {info.formats.map((f) => {
+            const lock = locked(f, premium);
+            return (
+              <button key={f.id} className={`fmt${f.id === formatId ? ' on' : ''}${lock ? ' locked' : ''}`}
+                onClick={() => lock ? onUpsell() : setFormatId(f.id)}>
+                {f.kind === 'audio' ? <Music style={{ width: 15, height: 15, color: 'var(--sage)', flex: 'none' }} />
+                  : f.kind === 'image' ? <ImageIcon style={{ width: 15, height: 15, color: 'var(--sage)', flex: 'none' }} />
+                  : <Film style={{ width: 15, height: 15, color: 'var(--sage)', flex: 'none' }} />}
+                <span>
+                  <span className="lbl">{f.label}</span>
+                  {f.note && <span className="note"> — {f.note}</span>}
+                </span>
+                {lock ? <span className="pill"><Lock style={{ width: 10, height: 10 }} /> Premium</span>
+                  : f.id === formatId ? <Check style={{ width: 14, height: 14, color: 'var(--sage)' }} /> : null}
+                <span className="size">{f.filesize ? mb(f.filesize) : f.ext.toUpperCase()}</span>
+              </button>
+            );
+          })}
         </div>
 
         <div className="opts" hidden={isImage}>
           <div className="opt">
             <label>Save as</label>
-            <select className="field" value={container} onChange={(e) => setContainer(e.target.value as DownloadRequest['container'])}>
-              {containers.map((c) => <option key={c} value={c}>{c === 'auto' ? 'Same as source' : c.toUpperCase()}</option>)}
+            <select className="field" value={container}
+              onChange={(e) => {
+                const v = e.target.value as DownloadRequest['container'];
+                if (v === 'mp3' && !premium) { onUpsell(); return; }   // MP3 is premium
+                setContainer(v);
+              }}>
+              {containers.map((c) => (
+                <option key={c} value={c}>
+                  {c === 'auto' ? 'Same as source' : c.toUpperCase()}{c === 'mp3' && !premium ? ' 🔒' : ''}
+                </option>
+              ))}
             </select>
           </div>
 
