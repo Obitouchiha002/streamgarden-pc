@@ -5,7 +5,7 @@ import { probe } from './probe';
 import { DownloadQueue } from './queue';
 import { toolStatus } from './tools';
 import { previewUrlFor, stopStreamServer } from './stream';
-import { search } from './search';
+import { search, cancelSearch } from './search';
 import { checkin, claimName, deviceId, deviceName } from './admin';
 import { DEFAULT_SETTINGS, isSupportedUrl } from '../shared/types';
 import type { Settings, DownloadRequest, DownloadItem } from '../shared/types';
@@ -177,6 +177,7 @@ if (!app.requestSingleInstanceLock()) {
 ipcMain.handle('tools:status', () => toolStatus());
 ipcMain.handle('probe', (_e, url: string) => probe(url));
 ipcMain.handle('search', (_e, q: string) => search(q));
+ipcMain.handle('cancel-search', () => { cancelSearch(); });
 ipcMain.handle('preview-url', (_e, url: string) => previewUrlFor(url));
 
 // Device registration — the same dashboard the Android app reports to.

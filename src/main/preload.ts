@@ -14,6 +14,8 @@ const api = {
   /** Type-ahead search; results come back fast enough to run on each keystroke. */
   search: (q: string): Promise<{ url: string; title: string; uploader: string; duration: number; thumbnail: string }[]> =>
     ipcRenderer.invoke('search', q),
+  /** Stop the search that's running (e.g. the box was cleared). */
+  cancelSearch: (): Promise<void> => ipcRenderer.invoke('cancel-search'),
 
   /** A local URL a <video> can scrub without downloading the file. */
   previewUrl: (url: string): Promise<string> => ipcRenderer.invoke('preview-url', url),

@@ -14,7 +14,7 @@ const SUPABASE_URL = 'https://befdjbbzuyzjlyrckkxj.supabase.co';
 const ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlZmRqYmJ6dXl6amx5cmNra3hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwMDIyNjYsImV4cCI6MjA5OTU3ODI2Nn0.OLJterEVLS2zIKsFv2tAZmgU0TxwXxRbfeE_sEEkHj4';
 
-export const APP_VERSION = '1.3';
+export const APP_VERSION = '1.4';
 
 export interface CheckinResult {
   blocked: boolean;

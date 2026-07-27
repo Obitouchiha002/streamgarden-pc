@@ -19,7 +19,10 @@ type Tab = 'get' | 'queue' | 'settings';
  * Deduplicated, order preserved.
  */
 function extractUrls(text: string): string[] {
-  const found = text.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+  // Put a space before every link first, so links glued together with no separator — which
+  // is what happens when a multi-line paste loses its newlines — still split into several.
+  const normalized = text.replace(/(https?:\/\/)/gi, ' $1');
+  const found = normalized.match(/https?:\/\/[^\s"'<>]+/gi) || [];
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of found) {
@@ -101,11 +104,14 @@ export default function App() {
   }, []);
 
   // Anything that isn't a link is treated as a search, run a beat after you stop typing.
-  // Two or more links is a batch, not a search query.
+  // Two or more links is a batch, not a search query. Whenever the query stops being a search
+  // (cleared, became a link, became a batch), tell the backend to kill the running yt-dlp —
+  // otherwise superseded searches keep running and clog everything, which is what made it slow.
   useEffect(() => {
     const q = url.trim();
-    if (batchUrls.length >= 2) { setHits([]); setSearching(false); return; }
-    if (!q || /^https?:\/\//i.test(q)) { setHits([]); setSearching(false); return; }
+    const stop = () => { setHits([]); setSearching(false); sg.cancelSearch(); };
+    if (batchUrls.length >= 2) return stop();
+    if (!q || /^https?:\/\//i.test(q)) return stop();
     if (q.length < 3) { setHits([]); return; }
     setSearching(true);
     let alive = true;
@@ -114,8 +120,8 @@ export default function App() {
         .then((r) => { if (alive) setHits(r); })
         .catch(() => { if (alive) setHits([]); })
         .finally(() => { if (alive) setSearching(false); });
-    }, 350);
-    return () => { alive = false; clearTimeout(t); setSearching(false); };
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
   }, [url, batchUrls.length]);
 
   useEffect(() => sg.onClipboardLink((u) => setClip(u)), []);
@@ -307,15 +313,23 @@ export default function App() {
 
               <form className="searchrow"
                 onSubmit={(e) => { e.preventDefault(); if (batchUrls.length >= 2) enqueueBatch(); else analyse(url); }}>
-                <input className="field" value={url} onChange={(e) => setUrl(e.target.value)}
-                  placeholder="Paste a link (or ten), or type what you are looking for…" spellCheck={false} autoFocus
-                  onPaste={(e) => {
-                    const t = e.clipboardData.getData('text').trim();
-                    if (!t) return;
-                    // Several links pasted at once? Let it become batch mode instead of probing one.
-                    if (extractUrls(t).length >= 2) { setUrl(t); return; }
-                    setUrl(t); setTimeout(() => analyse(t), 0);
-                  }} />
+                <div className="field-wrap">
+                  <input className="field" value={url} onChange={(e) => setUrl(e.target.value)}
+                    placeholder="Paste a link (or ten), or type what you are looking for…" spellCheck={false} autoFocus
+                    onPaste={(e) => {
+                      const t = e.clipboardData.getData('text').trim();
+                      if (!t) return;
+                      // Several links pasted at once? Let it become batch mode instead of probing one.
+                      if (extractUrls(t).length >= 2) { e.preventDefault(); setUrl(t); return; }
+                      setUrl(t); setTimeout(() => analyse(t), 0);
+                    }} />
+                  {url && (
+                    <button type="button" className="field-clear" aria-label="Clear"
+                      onClick={() => { setUrl(''); setInfo(null); setErr(''); sg.cancelSearch(); }}>
+                      <X style={{ width: 15, height: 15 }} />
+                    </button>
+                  )}
+                </div>
                 <button className="btn btn-primary" disabled={busy || (batchUrls.length < 2 && !url.trim())}>
                   {busy ? <Loader2 className="spin" /> : batchUrls.length >= 2 ? <ListVideo /> : <Search />}
                   {busy ? 'Reading…' : batchUrls.length >= 2 ? `Download ${batchUrls.length}` : 'Fetch'}

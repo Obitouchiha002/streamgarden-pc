@@ -163,7 +163,14 @@ select.field { cursor: pointer; }
 
 /* ── search row ────────────────────────────────────────────────────────── */
 .searchrow { display: flex; gap: 9px; margin-top: 16px; }
-.searchrow .field { flex: 1; }
+.searchrow .field-wrap { position: relative; flex: 1; display: flex; }
+.searchrow .field-wrap .field { flex: 1; padding-right: 38px; }
+.field-clear {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px;
+  color: var(--muted); transition: background .14s, color .14s;
+}
+.field-clear:hover { background: var(--surface-2); color: var(--text); }
 
 /* ── media panel ───────────────────────────────────────────────────────── */
 .media { display: grid; grid-template-columns: 300px 1fr; gap: 22px; margin-top: 20px; }
