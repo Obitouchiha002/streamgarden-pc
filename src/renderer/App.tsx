@@ -164,16 +164,14 @@ export default function App() {
   // a time. yt-dlp names each file from its real title; the queue row shows the link until
   // the download starts filling it in.
   const enqueueBatch = async () => {
+    // Multi-link (queue many at once) is a premium feature — free users see it, then upgrade.
+    if (!premium) { setUpsell(true); return; }
     const audio = batchKind === 'mp3';
-    if (audio && !premium) { setBatchKind('video'); return; }   // MP3 is premium
     for (const u of batchUrls) {
       await sg.queue.add({
         url: u,
         title: shortUrl(u),
-        // 'bestvideo' (not 'best') so the queue merges the highest-resolution stream with
-        // audio — 'best' alone is the muxed file, which YouTube caps at 720p. Free plan is
-        // held to 720p; premium gets the lot.
-        formatId: audio ? 'mp3-192' : (premium ? 'bestvideo' : 'bestvideo[height<=720]'),
+        formatId: audio ? 'mp3-192' : 'bestvideo',
         container: audio ? 'mp3' : (settings.defaultContainer === 'auto' ? 'mp4' : settings.defaultContainer),
         audioOnly: audio,
         subtitleLangs: [],
@@ -339,7 +337,10 @@ export default function App() {
               {batchUrls.length >= 2 && (
                 <div className="batch mt">
                   <div className="batch-head">
-                    <span className="batch-count"><ListVideo style={{ width: 16, height: 16 }} /> {batchUrls.length} links ready</span>
+                    <span className="batch-count">
+                      <ListVideo style={{ width: 16, height: 16 }} /> {batchUrls.length} links ready
+                      {!premium && <span className="pill" style={{ marginLeft: 8 }}><Lock style={{ width: 10, height: 10 }} /> Premium</span>}
+                    </span>
                     <div className="seg">
                       <button type="button" className={batchKind === 'video' ? 'on' : ''} onClick={() => setBatchKind('video')}>Video</button>
                       <button type="button" className={batchKind === 'mp3' ? 'on' : ''}
@@ -355,14 +356,16 @@ export default function App() {
                   </ul>
                   <div className="batch-foot">
                     <span className="sub" style={{ fontSize: 12 }}>
-                      {batchKind === 'mp3'
-                        ? 'MP3 audio, 192 kbps'
-                        : premium ? 'Best quality, merged to video' : 'Up to 720p (free plan)'} · {settings.maxParallel} at a time
+                      {premium
+                        ? `${batchKind === 'mp3' ? 'MP3 audio, 192 kbps' : 'Best quality, merged to video'} · ${settings.maxParallel} at a time`
+                        : 'Downloading many links at once is a premium feature'}
                     </span>
                     <div className="gap">
                       <button type="button" className="btn btn-ghost btn-sm" onClick={() => setUrl('')}>Clear</button>
                       <button type="button" className="btn btn-primary btn-sm" onClick={enqueueBatch}>
-                        <Download style={{ width: 15, height: 15 }} /> Download all {batchUrls.length}
+                        {premium
+                          ? <><Download style={{ width: 15, height: 15 }} /> Download all {batchUrls.length}</>
+                          : <><Lock style={{ width: 14, height: 14 }} /> Unlock Premium</>}
                       </button>
                     </div>
                   </div>
@@ -445,19 +448,19 @@ export default function App() {
             <span className="mark" style={{ width: 44, height: 44, borderRadius: 13 }}>
               <Sparkles style={{ width: 22, height: 22, color: '#12160B' }} />
             </span>
-            <h2 style={{ marginTop: 12 }}>A premium feature</h2>
+            <h2 style={{ marginTop: 12 }}>Unlock Premium</h2>
             <p className="sub" style={{ maxWidth: '34ch' }}>
-              The free plan downloads video up to 720p. Premium unlocks the full quality your
-              links offer — 1080p, 4K — and MP3 audio.
+              One payment, ₹99, yours for life. Unlocks everything the free plan holds back.
             </p>
             <ul className="perk">
               <li><Check style={{ width: 15, height: 15, color: 'var(--sage)' }} /> Full resolution, up to 4K</li>
               <li><Check style={{ width: 15, height: 15, color: 'var(--sage)' }} /> MP3 audio downloads</li>
+              <li><Check style={{ width: 15, height: 15, color: 'var(--sage)' }} /> Ten links at once (multi-link)</li>
               <li><Check style={{ width: 15, height: 15, color: 'var(--sage)' }} /> No filename branding</li>
             </ul>
             <div className="gap" style={{ marginTop: 16 }}>
-              <button className="btn btn-primary" onClick={() => { sg.openExternal('https://streamgd.lzworth.in'); setUpsell(false); }}>
-                <Sparkles style={{ width: 15, height: 15 }} /> Learn more
+              <button className="btn btn-primary" onClick={() => { sg.openExternal('https://streamgd.lzworth.in/#premium'); setUpsell(false); }}>
+                <Sparkles style={{ width: 15, height: 15 }} /> Get Premium — ₹99
               </button>
               <button className="btn btn-ghost" onClick={() => setUpsell(false)}>Not now</button>
             </div>
@@ -479,7 +482,7 @@ function TitleBar() {
           </svg>
         </span>
         StreamGarden
-        <span className="ver">1.0</span>
+        <span className="ver">1.5</span>
       </div>
       {/* Windows draws its own buttons over the overlay; other platforms get ours. */}
       {sg.platform !== 'win32' && (
