@@ -5,35 +5,39 @@ import type { MediaInfo, MediaFormat, Subtitle } from '../shared/types';
  * Ask yt-dlp what a URL actually offers. Playlists come back as a list of entries the user
  * can tick; a single video comes back with its real format list rather than a fixed menu.
  */
-export async function probe(url: string): Promise<MediaInfo> {
-  const raw = await ytDlpJson([
-    '--dump-single-json',
-    '--no-warnings',
-    '--flat-playlist',
-    url,
-  ]);
+// Playlist / channel / set pages — only these get the cheap flat listing. A normal watch URL
+// (even watch?v=…&list=…) is a single video and takes the fast single-call path.
+const LIST_URL = /(\/playlist\b)|(\/(channel|c|user)\/)|(\/@[\w.-]+\/(videos|streams|shorts))|(soundcloud\.com\/[^/]+\/sets\/)/i;
 
-  // A playlist: return the entries, don't try to describe formats for all of them.
-  if (raw._type === 'playlist' && Array.isArray(raw.entries)) {
-    return {
-      url,
-      title: raw.title || 'Playlist',
-      uploader: raw.uploader || raw.channel || '',
-      duration: 0,
-      thumbnail: raw.thumbnails?.[raw.thumbnails.length - 1]?.url || '',
-      formats: [],
-      subtitles: [],
-      isPlaylist: true,
-      entries: raw.entries.filter(Boolean).map((e: any) => ({
-        url: e.url || e.webpage_url || e.id,
-        title: e.title || 'Untitled',
-        duration: e.duration || 0,
-      })),
-    };
+function asPlaylist(url: string, raw: any): MediaInfo {
+  return {
+    url,
+    title: raw.title || 'Playlist',
+    uploader: raw.uploader || raw.channel || '',
+    duration: 0,
+    thumbnail: raw.thumbnails?.[raw.thumbnails.length - 1]?.url || '',
+    formats: [],
+    subtitles: [],
+    isPlaylist: true,
+    entries: (raw.entries || []).filter(Boolean).map((e: any) => ({
+      url: e.url || e.webpage_url || e.id,
+      title: e.title || 'Untitled',
+      duration: e.duration || 0,
+    })),
+  };
+}
+
+export async function probe(url: string): Promise<MediaInfo> {
+  // Playlist page → one cheap flat call. Otherwise a single video → ONE full call (was two
+  // before: a flat call that returns no formats, then the real one — pure wasted time).
+  if (LIST_URL.test(url)) {
+    const raw = await ytDlpJson(['--dump-single-json', '--no-warnings', '--flat-playlist', url]);
+    if (raw._type === 'playlist' && Array.isArray(raw.entries)) return asPlaylist(url, raw);
+    return single(url, raw.formats ? raw : await ytDlpJson(['--dump-single-json', '--no-warnings', url]));
   }
 
-  // A single item: --flat-playlist suppresses formats, so ask again properly.
-  const full = raw.formats ? raw : await ytDlpJson(['--dump-single-json', '--no-warnings', url]);
+  const full = await ytDlpJson(['--dump-single-json', '--no-warnings', '--no-playlist', url]);
+  if (full._type === 'playlist' && Array.isArray(full.entries)) return asPlaylist(url, full);
   return single(url, full);
 }
 
