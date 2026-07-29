@@ -3,9 +3,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { probe } from './probe';
 import { DownloadQueue } from './queue';
-import { toolStatus } from './tools';
+import { toolStatus, setCookieBrowser } from './tools';
 import { previewUrlFor, stopStreamServer } from './stream';
 import { search, cancelSearch } from './search';
+import { getTranscript } from './transcript';
 import { checkin, claimName, deviceId, deviceName } from './admin';
 import { DEFAULT_SETTINGS, isSupportedUrl } from '../shared/types';
 import type { Settings, DownloadRequest, DownloadItem } from '../shared/types';
@@ -179,9 +180,22 @@ ipcMain.handle('probe', (_e, url: string) => probe(url));
 ipcMain.handle('search', (_e, q: string) => search(q));
 ipcMain.handle('cancel-search', () => { cancelSearch(); });
 ipcMain.handle('preview-url', (_e, url: string) => previewUrlFor(url));
+ipcMain.handle('transcript', (_e, u: string) => getTranscript(u));
+
+// The YouTube-login (members-only) option only takes effect for Premium devices, and only
+// when the user has picked a browser. Recomputed on check-in and whenever settings change.
+let premium = false;
+function applyCookies() {
+  setCookieBrowser(premium && settings.ytCookies ? settings.ytCookies : '');
+}
 
 // Device registration — the same dashboard the Android app reports to.
-ipcMain.handle('admin:checkin', () => checkin(settings.profileName));
+ipcMain.handle('admin:checkin', async () => {
+  const r = await checkin(settings.profileName);
+  premium = r.premium;
+  applyCookies();
+  return r;
+});
 ipcMain.handle('admin:device', () => ({ id: deviceId(), name: deviceName() }));
 ipcMain.handle('admin:claimName', (_e, name: string) => claimName(name));
 
@@ -200,6 +214,7 @@ ipcMain.handle('settings:set', (_e, next: Settings) => {
   saveSettings();
   queue.updateSettings(settings);
   nativeTheme.themeSource = settings.theme;
+  applyCookies();
 
   if (prevHotkey !== settings.globalHotkey) {
     globalShortcut.unregisterAll();

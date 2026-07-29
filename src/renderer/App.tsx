@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Download, ListVideo, Settings as SettingsIcon, Search, Loader2, X,
-  Film, AlertTriangle, ClipboardCheck, Minus, Square, ShieldAlert, Lock, Sparkles, Check,
+  Film, AlertTriangle, ClipboardCheck, Minus, Square, ShieldAlert, Lock, Sparkles, Check, FileText,
 } from 'lucide-react';
+import { TranscriptView } from './TranscriptView';
 import type { DownloadItem, DownloadRequest, MediaInfo, Settings } from '../shared/types';
 import { DEFAULT_SETTINGS, isSupportedUrl } from '../shared/types';
 import { QueueView } from './Queue';
@@ -10,7 +11,7 @@ import { SettingsView } from './SettingsView';
 import { MediaPanel } from './MediaPanel';
 
 const sg = window.sg;
-type Tab = 'get' | 'queue' | 'settings';
+type Tab = 'get' | 'queue' | 'transcript' | 'settings';
 
 /**
  * Pull every supported link out of a blob of text. Pasting ten links at once — whether
@@ -288,6 +289,7 @@ export default function App() {
           <NavItem icon={<Download />} label="Get media" on={tab === 'get'} onClick={() => setTab('get')} />
           <NavItem icon={<ListVideo />} label="Downloads" on={tab === 'queue'} onClick={() => setTab('queue')}
             count={active || undefined} />
+          <NavItem icon={<FileText />} label="Transcript" on={tab === 'transcript'} onClick={() => setTab('transcript')} />
           <NavItem icon={<SettingsIcon />} label="Settings" on={tab === 'settings'} onClick={() => setTab('settings')} />
 
           <div className="sidebar-foot">
@@ -419,8 +421,10 @@ export default function App() {
 
           {tab === 'queue' && <QueueView items={items} onRefresh={setItems} />}
 
+          {tab === 'transcript' && <TranscriptView premium={premium} onUpsell={() => setUpsell(true)} />}
+
           {tab === 'settings' && (
-            <SettingsView settings={settings} onChange={async (s) => setSettings(await sg.settings.set(s))} tools={tools} />
+            <SettingsView settings={settings} onChange={async (s) => setSettings(await sg.settings.set(s))} tools={tools} premium={premium} onUpsell={() => setUpsell(true)} />
           )}
         </main>
       </div>
@@ -482,7 +486,7 @@ function TitleBar() {
           </svg>
         </span>
         StreamGarden
-        <span className="ver">1.5</span>
+        <span className="ver">1.6</span>
       </div>
       {/* Windows draws its own buttons over the overlay; other platforms get ours. */}
       {sg.platform !== 'win32' && (

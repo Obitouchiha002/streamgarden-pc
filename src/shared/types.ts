@@ -84,7 +84,13 @@ export interface Settings {
   organiseByUploader: boolean;
   theme: 'system' | 'light' | 'dark';
   defaultContainer: DownloadRequest['container'];
+  /** Read the YouTube login from this browser (Premium) so members-only videos, age-restricted
+   *  and Premium-quality streams download. '' = off. */
+  ytCookies: '' | 'chrome' | 'edge' | 'brave' | 'firefox' | 'opera' | 'vivaldi' | 'safari';
 }
+
+/** Browsers yt-dlp can read cookies from. */
+export const COOKIE_BROWSERS = ['chrome', 'edge', 'brave', 'firefox', 'opera', 'vivaldi', 'safari'] as const;
 
 export const DEFAULT_SETTINGS: Settings = {
   downloadDir: '',
@@ -97,6 +103,7 @@ export const DEFAULT_SETTINGS: Settings = {
   organiseByUploader: false,
   theme: 'system',
   defaultContainer: 'auto',
+  ytCookies: '',
 };
 
 /** Links we offer to fetch when they appear on the clipboard. */

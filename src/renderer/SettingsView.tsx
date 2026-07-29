@@ -1,12 +1,16 @@
-import { FolderOpen, Check, AlertTriangle } from 'lucide-react';
+import { FolderOpen, Check, AlertTriangle, Lock, Youtube } from 'lucide-react';
 import type { Settings } from '../shared/types';
+import { COOKIE_BROWSERS } from '../shared/types';
 
 const sg = window.sg;
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export function SettingsView({ settings, onChange, tools }: {
+export function SettingsView({ settings, onChange, tools, premium, onUpsell }: {
   settings: Settings;
   onChange: (s: Settings) => void;
   tools: { ytDlp: string | null; ffmpeg: string | null; ready: boolean } | null;
+  premium: boolean;
+  onUpsell: () => void;
 }) {
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => onChange({ ...settings, [k]: v });
 
@@ -104,6 +108,34 @@ export function SettingsView({ settings, onChange, tools }: {
         </div>
         <p className="sub" style={{ marginTop: 8 }}>
           The shortcut grabs whatever link is on your clipboard and starts reading it, from anywhere.
+        </p>
+      </div>
+
+      <div className="card mt" style={{ padding: 18 }}>
+        <div className="eyebrow" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <Youtube style={{ width: 15, height: 15, color: 'var(--sage)' }} /> YouTube account · Premium
+        </div>
+        <p className="sub" style={{ marginTop: 8 }}>
+          Use your browser's YouTube login so <b>members-only</b> videos, age-restricted clips and
+          Premium-quality streams download too. Sign in to YouTube in that browser first.
+        </p>
+        {premium ? (
+          <div className="opt" style={{ marginTop: 12, maxWidth: 300 }}>
+            <label>Read my login from</label>
+            <select className="field" value={settings.ytCookies}
+              onChange={(e) => set('ytCookies', e.target.value as Settings['ytCookies'])}>
+              <option value="">Off</option>
+              {COOKIE_BROWSERS.map((b) => <option key={b} value={b}>{cap(b)}</option>)}
+            </select>
+          </div>
+        ) : (
+          <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={onUpsell}>
+            <Lock style={{ width: 15, height: 15 }} /> Unlock with Premium
+          </button>
+        )}
+        <p className="sub" style={{ marginTop: 10, fontSize: 11.5, color: 'var(--dim)' }}>
+          Only works for channels you're actually a member of — it's your own login, on your own PC.
+          Nothing is uploaded; the app just reads the cookie your browser already stored.
         </p>
       </div>
 

@@ -46,6 +46,13 @@ export function toolStatus(): ToolStatus {
   return { ytDlp: y, ffmpeg: f, ready: Boolean(y && f) };
 }
 
+// When Premium + the user opts in, yt-dlp reads their browser's YouTube login so members-only
+// videos, age-restricted and Premium-quality streams work. Set from the main process.
+let cookieArgs: string[] = [];
+export function setCookieBrowser(browser: string) {
+  cookieArgs = browser ? ['--cookies-from-browser', browser] : [];
+}
+
 /** Run yt-dlp and collect stdout. Used for the JSON probe. */
 export function ytDlpJson(args: string[]): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -53,7 +60,7 @@ export function ytDlpJson(args: string[]): Promise<any> {
     if (!bin) return reject(new Error('yt-dlp is not available'));
 
     const ff = ffmpegPath();
-    const full = ff ? ['--ffmpeg-location', ff, ...args] : args;
+    const full = [...cookieArgs, ...(ff ? ['--ffmpeg-location', ff] : []), ...args];
     const child = spawn(bin, full, { windowsHide: true });
 
     let out = '', err = '';
@@ -73,6 +80,6 @@ export function spawnYtDlp(args: string[]): ChildProcess {
   const bin = ytDlpPath();
   if (!bin) throw new Error('yt-dlp is not available');
   const ff = ffmpegPath();
-  const full = ff ? ['--ffmpeg-location', ff, ...args] : args;
+  const full = [...cookieArgs, ...(ff ? ['--ffmpeg-location', ff] : []), ...args];
   return spawn(bin, full, { windowsHide: true });
 }

@@ -20,6 +20,10 @@ const api = {
   /** A local URL a <video> can scrub without downloading the file. */
   previewUrl: (url: string): Promise<string> => ipcRenderer.invoke('preview-url', url),
 
+  /** Pull the transcript (captions) and caption text from a link. */
+  transcript: (url: string): Promise<{ title: string; uploader: string; caption: string; transcript: string; source: 'manual' | 'auto' | 'none' }> =>
+    ipcRenderer.invoke('transcript', url),
+
   admin: {
     checkin: (): Promise<{
       blocked: boolean; reason: string | null; code: string | null; until: string | null;
