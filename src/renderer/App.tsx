@@ -93,11 +93,11 @@ export default function App() {
     });
   }), []);
 
-  // Set true the moment the user hits Stop, so a fetch that was already in flight doesn't
-  // pop its (now unwanted) result or error in after they've moved on.
-  const cancelledRef = useRef(false);
+  // Each fetch carries a run id. Stopping (or starting a new fetch) bumps it, so a fetch that
+  // was already in flight can never apply its now-unwanted result or error to a newer one.
+  const runId = useRef(0);
   const cancelProbe = useCallback(() => {
-    cancelledRef.current = true;
+    runId.current++;
     sg.cancelProbe();
     setBusy(false); setErr('');
   }, []);
@@ -105,15 +105,15 @@ export default function App() {
   const analyse = useCallback(async (target: string) => {
     const t = target.trim();
     if (!t) return;
-    cancelledRef.current = false;
+    const mine = ++runId.current;
     setBusy(true); setErr(''); setInfo(null); setTab('get');
     try {
       const r = await sg.probe(t);
-      if (!cancelledRef.current) setInfo(r);
+      if (runId.current === mine) setInfo(r);
     } catch (e: any) {
-      if (!cancelledRef.current) setErr(e?.message?.replace(/^Error invoking remote method '[^']+':\s*/, '') || 'Could not read that link.');
+      if (runId.current === mine) setErr(e?.message?.replace(/^Error invoking remote method '[^']+':\s*/, '') || 'Could not read that link.');
     } finally {
-      if (!cancelledRef.current) setBusy(false);
+      if (runId.current === mine) setBusy(false);
     }
   }, []);
 
@@ -505,7 +505,7 @@ function TitleBar() {
           </svg>
         </span>
         StreamGarden
-        <span className="ver">1.6</span>
+        <span className="ver">1.7</span>
       </div>
       {/* Windows draws its own buttons over the overlay; other platforms get ours. */}
       {sg.platform !== 'win32' && (
