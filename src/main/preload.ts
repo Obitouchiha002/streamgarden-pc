@@ -10,6 +10,8 @@ const api = {
     ipcRenderer.invoke('tools:status'),
 
   probe: (url: string): Promise<MediaInfo> => ipcRenderer.invoke('probe', url),
+  /** Stop a running fetch (probe/transcript) — e.g. the wrong link was pasted. */
+  cancelProbe: (): Promise<void> => ipcRenderer.invoke('cancel-probe'),
 
   /** Type-ahead search; results come back fast enough to run on each keystroke. */
   search: (q: string): Promise<{ url: string; title: string; uploader: string; duration: number; thumbnail: string }[]> =>

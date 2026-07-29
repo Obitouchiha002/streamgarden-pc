@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { probe } from './probe';
 import { DownloadQueue } from './queue';
-import { toolStatus, setCookieBrowser } from './tools';
+import { toolStatus, setCookieBrowser, cancelJson } from './tools';
 import { previewUrlFor, stopStreamServer } from './stream';
 import { search, cancelSearch } from './search';
 import { getTranscript } from './transcript';
@@ -181,6 +181,7 @@ ipcMain.handle('search', (_e, q: string) => search(q));
 ipcMain.handle('cancel-search', () => { cancelSearch(); });
 ipcMain.handle('preview-url', (_e, url: string) => previewUrlFor(url));
 ipcMain.handle('transcript', (_e, u: string) => getTranscript(u));
+ipcMain.handle('cancel-probe', () => { cancelJson(); });
 
 // The YouTube-login (members-only) option only takes effect for Premium devices, and only
 // when the user has picked a browser. Recomputed on check-in and whenever settings change.

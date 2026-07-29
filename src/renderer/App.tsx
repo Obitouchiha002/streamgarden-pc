@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Download, ListVideo, Settings as SettingsIcon, Search, Loader2, X,
   Film, AlertTriangle, ClipboardCheck, Minus, Square, ShieldAlert, Lock, Sparkles, Check, FileText,
@@ -93,15 +93,28 @@ export default function App() {
     });
   }), []);
 
+  // Set true the moment the user hits Stop, so a fetch that was already in flight doesn't
+  // pop its (now unwanted) result or error in after they've moved on.
+  const cancelledRef = useRef(false);
+  const cancelProbe = useCallback(() => {
+    cancelledRef.current = true;
+    sg.cancelProbe();
+    setBusy(false); setErr('');
+  }, []);
+
   const analyse = useCallback(async (target: string) => {
     const t = target.trim();
     if (!t) return;
+    cancelledRef.current = false;
     setBusy(true); setErr(''); setInfo(null); setTab('get');
     try {
-      setInfo(await sg.probe(t));
+      const r = await sg.probe(t);
+      if (!cancelledRef.current) setInfo(r);
     } catch (e: any) {
-      setErr(e?.message?.replace(/^Error invoking remote method '[^']+':\s*/, '') || 'Could not read that link.');
-    } finally { setBusy(false); }
+      if (!cancelledRef.current) setErr(e?.message?.replace(/^Error invoking remote method '[^']+':\s*/, '') || 'Could not read that link.');
+    } finally {
+      if (!cancelledRef.current) setBusy(false);
+    }
   }, []);
 
   // Anything that isn't a link is treated as a search, run a beat after you stop typing.
@@ -325,15 +338,21 @@ export default function App() {
                     }} />
                   {url && (
                     <button type="button" className="field-clear" aria-label="Clear"
-                      onClick={() => { setUrl(''); setInfo(null); setErr(''); sg.cancelSearch(); }}>
+                      onClick={() => { cancelProbe(); setUrl(''); setInfo(null); }}>
                       <X style={{ width: 15, height: 15 }} />
                     </button>
                   )}
                 </div>
-                <button className="btn btn-primary" disabled={busy || (batchUrls.length < 2 && !url.trim())}>
-                  {busy ? <Loader2 className="spin" /> : batchUrls.length >= 2 ? <ListVideo /> : <Search />}
-                  {busy ? 'Reading…' : batchUrls.length >= 2 ? `Download ${batchUrls.length}` : 'Fetch'}
-                </button>
+                {busy ? (
+                  <button type="button" className="btn btn-ghost" onClick={cancelProbe} title="Stop">
+                    <X style={{ width: 16, height: 16 }} /> Stop
+                  </button>
+                ) : (
+                  <button className="btn btn-primary" disabled={batchUrls.length < 2 && !url.trim()}>
+                    {batchUrls.length >= 2 ? <ListVideo /> : <Search />}
+                    {batchUrls.length >= 2 ? `Download ${batchUrls.length}` : 'Fetch'}
+                  </button>
+                )}
               </form>
 
               {batchUrls.length >= 2 && (

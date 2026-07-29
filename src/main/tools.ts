@@ -53,6 +53,15 @@ export function setCookieBrowser(browser: string) {
   cookieArgs = browser ? ['--cookies-from-browser', browser] : [];
 }
 
+// The JSON extractions (probe, transcript) are the slow, cancellable ones. Keeping a handle on
+// the running yt-dlp lets the UI stop a fetch instantly — pasted the wrong link, hit Stop, paste
+// the right one — instead of waiting for a slow extraction to finish.
+let jsonProc: ChildProcess | null = null;
+export function cancelJson() {
+  if (jsonProc && !jsonProc.killed) { try { jsonProc.kill('SIGKILL'); } catch { /* already gone */ } }
+  jsonProc = null;
+}
+
 /** Run yt-dlp and collect stdout. Used for the JSON probe. */
 export function ytDlpJson(args: string[]): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -62,13 +71,15 @@ export function ytDlpJson(args: string[]): Promise<any> {
     const ff = ffmpegPath();
     const full = [...cookieArgs, ...(ff ? ['--ffmpeg-location', ff] : []), ...args];
     const child = spawn(bin, full, { windowsHide: true });
+    jsonProc = child;
 
     let out = '', err = '';
     child.stdout.on('data', (d) => (out += d.toString()));
     child.stderr.on('data', (d) => (err += d.toString()));
-    child.on('error', reject);
+    child.on('error', (e) => { if (jsonProc === child) jsonProc = null; reject(e); });
     child.on('close', (code) => {
-      if (code !== 0) return reject(new Error(err.trim().split('\n').pop() || `yt-dlp exited ${code}`));
+      if (jsonProc === child) jsonProc = null;
+      if (code !== 0) return reject(new Error(err.trim().split('\n').pop() || 'cancelled'));
       try { resolve(JSON.parse(out)); }
       catch { reject(new Error('Could not read the response from yt-dlp')); }
     });
