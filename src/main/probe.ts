@@ -44,13 +44,17 @@ async function fastMedia(url: string): Promise<MediaInfo> {
     height: h,
     note: h === 1080 ? 'best available' : undefined,
   }));
+  // A FREE audio option (source m4a, no conversion) so the free tier isn't MP3-only. MP3 stays premium.
+  const audio: MediaFormat[] = [
+    { id: 'bestaudio', label: 'Audio · M4A', kind: 'audio', ext: 'm4a', note: 'best audio, no convert' },
+  ];
   const mp3: MediaFormat[] = [320, 192, 128].map((b) => ({
     id: `mp3-${b}`, label: `MP3 ${b} kbps`, kind: 'audio', ext: 'mp3', bitrate: b, note: 'converted on this PC',
   }));
 
   return {
     url, title, uploader, duration: 0, thumbnail,
-    formats: [...video, ...mp3],
+    formats: [...video, ...audio, ...mp3],
     subtitles: [], isPlaylist: false,
   };
 }
