@@ -117,25 +117,26 @@ export default function App() {
     }
   }, []);
 
-  // Anything that isn't a link is treated as a search, run a beat after you stop typing.
-  // Two or more links is a batch, not a search query. Whenever the query stops being a search
-  // (cleared, became a link, became a batch), tell the backend to kill the running yt-dlp —
-  // otherwise superseded searches keep running and clog everything, which is what made it slow.
+  // Search runs ONLY when you submit (Enter / Fetch) — never while you type, so typing is never
+  // interrupted. A plain phrase → search; a link → probe (handled by the form's onSubmit).
+  const runSearch = useCallback((q: string) => {
+    const query = q.trim();
+    if (!query) return;
+    const mine = ++runId.current;
+    setInfo(null); setErr(''); setTab('get'); setSearching(true);
+    sg.search(query)
+      .then((r) => { if (runId.current === mine) setHits(r); })
+      .catch(() => { if (runId.current === mine) setHits([]); })
+      .finally(() => { if (runId.current === mine) setSearching(false); });
+  }, []);
+
+  // Only housekeeping now: the instant the box stops being a plain search (cleared, a link, or a
+  // batch), drop stale results and kill any running search. No scanning-as-you-type.
   useEffect(() => {
     const q = url.trim();
-    const stop = () => { setHits([]); setSearching(false); sg.cancelSearch(); };
-    if (batchUrls.length >= 2) return stop();
-    if (!q || /^https?:\/\//i.test(q)) return stop();
-    if (q.length < 3) { setHits([]); return; }
-    setSearching(true);
-    let alive = true;
-    const t = setTimeout(() => {
-      sg.search(q)
-        .then((r) => { if (alive) setHits(r); })
-        .catch(() => { if (alive) setHits([]); })
-        .finally(() => { if (alive) setSearching(false); });
-    }, 300);
-    return () => { alive = false; clearTimeout(t); };
+    if (!q || /^https?:\/\//i.test(q) || batchUrls.length >= 2) {
+      setHits([]); setSearching(false); sg.cancelSearch();
+    }
   }, [url, batchUrls.length]);
 
   useEffect(() => sg.onClipboardLink((u) => setClip(u)), []);
@@ -331,7 +332,13 @@ export default function App() {
               <p className="sub">Paste a link from YouTube, Instagram, TikTok, X, Vimeo, Reddit and more.</p>
 
               <form className="searchrow"
-                onSubmit={(e) => { e.preventDefault(); if (batchUrls.length >= 2) enqueueBatch(); else analyse(url); }}>
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const q = url.trim();
+                  if (batchUrls.length >= 2) return enqueueBatch();
+                  if (!q) return;
+                  if (/^https?:\/\//i.test(q)) analyse(q); else runSearch(q);
+                }}>
                 <div className="field-wrap">
                   <input className="field" value={url} onChange={(e) => setUrl(e.target.value)}
                     placeholder="Paste a link (or ten), or type what you are looking for…" spellCheck={false} autoFocus
@@ -343,7 +350,9 @@ export default function App() {
                       if (!t) return;
                       // Several links pasted at once? Let it become batch mode instead of probing one.
                       if (extractUrls(t).length >= 2) { setUrl(t); return; }
-                      setUrl(t); setTimeout(() => analyse(t), 0);
+                      setUrl(t);
+                      // Auto-probe only a pasted LINK; pasted text just fills the box (press Enter).
+                      if (/^https?:\/\//i.test(t)) setTimeout(() => analyse(t), 0);
                     }} />
                   {url && (
                     <button type="button" className="field-clear" aria-label="Clear"
