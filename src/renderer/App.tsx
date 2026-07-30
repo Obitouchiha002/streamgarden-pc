@@ -181,12 +181,18 @@ export default function App() {
     // Multi-link (queue many at once) is a premium feature — free users see it, then upgrade.
     if (!premium) { setUpsell(true); return; }
     const audio = batchKind === 'mp3';
+    // A video batch must never inherit an audio-only default container (e.g. the user set
+    // Default = MP3) — that emits --merge-output-format mp3 on a video+audio merge and every
+    // item fails. Fall back to mp4 for video; use the chosen container for audio.
+    const AUDIO_CONTAINERS = ['mp3', 'm4a', 'wav', 'flac'];
+    const videoContainer = (settings.defaultContainer === 'auto' || AUDIO_CONTAINERS.includes(settings.defaultContainer))
+      ? 'mp4' : settings.defaultContainer;
     for (const u of batchUrls) {
       await sg.queue.add({
         url: u,
         title: shortUrl(u),
         formatId: audio ? 'mp3-192' : 'bestvideo',
-        container: audio ? 'mp3' : (settings.defaultContainer === 'auto' ? 'mp4' : settings.defaultContainer),
+        container: audio ? 'mp3' : videoContainer,
         audioOnly: audio,
         subtitleLangs: [],
         embedSubtitles: false,
@@ -330,10 +336,13 @@ export default function App() {
                   <input className="field" value={url} onChange={(e) => setUrl(e.target.value)}
                     placeholder="Paste a link (or ten), or type what you are looking for…" spellCheck={false} autoFocus
                     onPaste={(e) => {
+                      // Always take over the paste. Letting the browser ALSO insert the text (no
+                      // preventDefault) is what made a single link land twice in the field.
+                      e.preventDefault();
                       const t = e.clipboardData.getData('text').trim();
                       if (!t) return;
                       // Several links pasted at once? Let it become batch mode instead of probing one.
-                      if (extractUrls(t).length >= 2) { e.preventDefault(); setUrl(t); return; }
+                      if (extractUrls(t).length >= 2) { setUrl(t); return; }
                       setUrl(t); setTimeout(() => analyse(t), 0);
                     }} />
                   {url && (

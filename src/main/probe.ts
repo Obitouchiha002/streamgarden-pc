@@ -45,25 +45,28 @@ function single(url: string, j: any): MediaInfo {
   const seenVideo = new Set<number>();
   const video: MediaFormat[] = [];
   const audio: MediaFormat[] = [];
+  let addedSizelessVideo = false;
 
   for (const f of j.formats || []) {
     const hasV = f.vcodec && f.vcodec !== 'none';
     const hasA = f.acodec && f.acodec !== 'none';
 
-    if (hasV && f.height) {
-      // One entry per resolution — the highest-bitrate variant wins.
-      if (seenVideo.has(f.height)) continue;
-      seenVideo.add(f.height);
+    if (hasV) {
+      const h = f.height || 0;
+      // Instagram/TikTok reels often report no height — before, that dropped the whole video
+      // and only the thumbnail was left (so "video" downloaded an image). Keep it as one entry.
+      if (h) { if (seenVideo.has(h)) continue; seenVideo.add(h); }
+      else { if (addedSizelessVideo) continue; addedSizelessVideo = true; }
       video.push({
         id: f.format_id,
-        label: `${f.height}p${f.fps && f.fps >= 50 ? f.fps : ''}`,
+        label: h ? `${h}p${f.fps && f.fps >= 50 ? f.fps : ''}` : (f.format_note || (f.width ? `${f.width}px` : 'Video')),
         kind: 'video',
         ext: f.ext || 'mp4',
-        height: f.height,
+        height: h || undefined,
         filesize: f.filesize || f.filesize_approx || undefined,
         note: hasA ? undefined : 'merged with best audio',
       });
-    } else if (hasA && !hasV) {
+    } else if (hasA) {
       audio.push({
         id: f.format_id,
         label: `${Math.round(f.abr || f.tbr || 0)} kbps${f.ext ? ` · ${f.ext.toUpperCase()}` : ''}`,

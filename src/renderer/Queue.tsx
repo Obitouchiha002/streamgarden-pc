@@ -34,13 +34,13 @@ export function QueueView({ items, onRefresh }: {
       </div>
 
       <div className="card mt rows">
-        {items.map((it) => <Row key={it.id} it={it} />)}
+        {items.map((it) => <Row key={it.id} it={it} onRefresh={onRefresh} />)}
       </div>
     </section>
   );
 }
 
-function Row({ it }: { it: DownloadItem }) {
+function Row({ it, onRefresh }: { it: DownloadItem; onRefresh: (items: DownloadItem[]) => void }) {
   const running = it.phase === 'downloading' || it.phase === 'merging' || it.phase === 'converting';
   const pct = Math.round(it.progress * 100);
 
@@ -75,7 +75,7 @@ function Row({ it }: { it: DownloadItem }) {
           <button className="btn-icon danger" title="Cancel" onClick={() => sg.queue.cancel(it.id)}><X /></button>
         )}
         {['done', 'failed', 'cancelled'].includes(it.phase) && (
-          <button className="btn-icon danger" title="Remove from list" onClick={() => sg.queue.remove(it.id)}>
+          <button className="btn-icon danger" title="Remove from list" onClick={async () => onRefresh(await sg.queue.remove(it.id))}>
             <Trash2 />
           </button>
         )}

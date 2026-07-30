@@ -205,7 +205,7 @@ ipcMain.handle('queue:all', () => queue.all());
 ipcMain.handle('queue:pause', (_e, id: string) => queue.pause(id));
 ipcMain.handle('queue:resume', (_e, id: string) => queue.resume(id));
 ipcMain.handle('queue:cancel', (_e, id: string) => queue.cancel(id));
-ipcMain.handle('queue:remove', (_e, id: string) => queue.remove(id));
+ipcMain.handle('queue:remove', (_e, id: string) => { queue.remove(id); return queue.all(); });
 ipcMain.handle('queue:clearFinished', () => { queue.clearFinished(); return queue.all(); });
 
 ipcMain.handle('settings:get', () => settings);

@@ -7,7 +7,11 @@ import { Trimmer } from './Trimmer';
 const FREE_MAX_HEIGHT = 720;
 function locked(f: MediaFormat, premium: boolean): boolean {
   if (premium) return false;
-  return f.kind === 'video' && (f.height ?? 0) > FREE_MAX_HEIGHT;
+  if (f.kind === 'video' && (f.height ?? 0) > FREE_MAX_HEIGHT) return true;
+  // MP3 is a premium output — it was gated in the batch flow and the container dropdown, but the
+  // single-item format rows let a free user pick "MP3 320 kbps" straight from the list.
+  if (f.ext === 'mp3' || f.id.startsWith('mp3-')) return true;
+  return false;
 }
 
 /**

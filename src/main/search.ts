@@ -35,7 +35,7 @@ export function search(query: string, limit = 12): Promise<SearchHit[]> {
       '--dump-single-json',
       '--flat-playlist',
       '--no-warnings',
-    ]);
+    ], { noCookies: true });
     current = child;
 
     let out = '';
