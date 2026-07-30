@@ -10,6 +10,8 @@ const api = {
     ipcRenderer.invoke('tools:status'),
 
   probe: (url: string): Promise<MediaInfo> => ipcRenderer.invoke('probe', url),
+  /** Instant options (title/thumb + quality ladder) shown while probe() loads the real data. */
+  probeFast: (url: string): Promise<MediaInfo> => ipcRenderer.invoke('probe-fast', url),
   /** Stop a running fetch (probe/transcript) — e.g. the wrong link was pasted. */
   cancelProbe: (): Promise<void> => ipcRenderer.invoke('cancel-probe'),
 

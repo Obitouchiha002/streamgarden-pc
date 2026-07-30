@@ -43,6 +43,10 @@ function shortUrl(u: string): string {
   } catch { return u; }
 }
 
+// Playlist / channel / set pages have no instant preview (their entry list must come from the real
+// probe). Mirrors LIST_URL in main/probe.ts. A normal watch?v=…&list=… is a single video.
+const IS_LIST = /(\/playlist\b)|(\/(channel|c|user)\/)|(\/@[\w.-]+\/(videos|streams|shorts))|(soundcloud\.com\/[^/]+\/sets\/)/i;
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('get');
   const [url, setUrl] = useState('');
@@ -106,14 +110,30 @@ export default function App() {
     const t = target.trim();
     if (!t) return;
     const mine = ++runId.current;
-    setBusy(true); setErr(''); setInfo(null); setTab('get');
+    setErr(''); setInfo(null); setHits([]); setTab('get'); setBusy(true);
+
+    // Phase 1 — instant: show title/thumbnail + a quality ladder right away so it feels immediate.
+    // Playlists are skipped here (their entry list can only come from the real probe).
+    if (!IS_LIST.test(t)) {
+      try {
+        const fast = await sg.probeFast(t);
+        if (runId.current !== mine) return;
+        setInfo(fast); setBusy(false);
+      } catch { /* no instant options — the real probe below fills in */ }
+    }
+
+    // Phase 2 — background: the real probe (exact formats/sizes). Upgrades the panel when it lands;
+    // if it fails and we already showed fast options, we keep them silently.
     try {
-      const r = await sg.probe(t);
-      if (runId.current === mine) setInfo(r);
+      const rich = await sg.probe(t);
+      if (runId.current === mine) { setInfo(rich); setBusy(false); }
     } catch (e: any) {
-      if (runId.current === mine) setErr(e?.message?.replace(/^Error invoking remote method '[^']+':\s*/, '') || 'Could not read that link.');
-    } finally {
-      if (runId.current === mine) setBusy(false);
+      if (runId.current !== mine) return;
+      setBusy(false);
+      setInfo((cur) => {
+        if (!cur) setErr(e?.message?.replace(/^Error invoking remote method '[^']+':\s*/, '') || 'Could not read that link.');
+        return cur;
+      });
     }
   }, []);
 

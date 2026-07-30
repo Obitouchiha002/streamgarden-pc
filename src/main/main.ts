@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, dialog, clipboard, Tray, Menu, globalShortcut, nativeTheme } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { probe } from './probe';
+import { probe, probeFast } from './probe';
 import { DownloadQueue } from './queue';
 import { toolStatus, setCookieBrowser, cancelJson } from './tools';
 import { previewUrlFor, stopStreamServer } from './stream';
@@ -177,6 +177,7 @@ if (!app.requestSingleInstanceLock()) {
 // ── IPC ────────────────────────────────────────────────────────────────────
 ipcMain.handle('tools:status', () => toolStatus());
 ipcMain.handle('probe', (_e, url: string) => probe(url));
+ipcMain.handle('probe-fast', (_e, url: string) => probeFast(url));
 ipcMain.handle('search', (_e, q: string) => search(q));
 ipcMain.handle('cancel-search', () => { cancelSearch(); });
 ipcMain.handle('preview-url', (_e, url: string) => previewUrlFor(url));

@@ -4,9 +4,10 @@ import type { MediaInfo, MediaFormat, Subtitle } from '../shared/types';
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-// yt-dlp's extraction can be rate-limited to 20s+ on a hammered IP. Cap the wait, then hand back
-// fast generic options instead of hanging the "paste a link" screen.
-const PROBE_TIMEOUT_MS = 4000;
+// The UI shows probeFast() options instantly and loads the real probe in the background, so these
+// caps only guard against a truly stuck yt-dlp — the user already has working options.
+const RICH_TIMEOUT_MS = 20000;      // background single-video extraction
+const PLAYLIST_TIMEOUT_MS = 25000;  // a bad/private/huge list must not grind for ~50s
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -80,32 +81,38 @@ function asPlaylist(url: string, raw: any): MediaInfo {
   };
 }
 
+/** Instant options: page title/thumbnail (oembed) + a standard quality ladder whose ids are
+ *  yt-dlp selectors. Shown the moment a link is pasted; probe() then upgrades it in the background
+ *  with real formats/sizes. Fully downloadable on its own if the rich probe never lands. */
+export async function probeFast(url: string): Promise<MediaInfo> {
+  return fastMedia(url);
+}
+
 export async function probe(url: string): Promise<MediaInfo> {
-  // Playlist page → one cheap flat call. Otherwise a single video → ONE full call (was two
-  // before: a flat call that returns no formats, then the real one — pure wasted time).
   if (LIST_URL.test(url)) {
-    const raw = await ytDlpJson(['--dump-single-json', '--no-warnings', '--flat-playlist', url]);
+    // A playlist has no fast fallback (its entries can't come from oembed), so cap it and trim
+    // retries — a bad/private id then fails in seconds instead of grinding for ~50s.
+    const raw = await withTimeout(
+      ytDlpJson(['--dump-single-json', '--no-warnings', '--flat-playlist',
+        '--extractor-retries', '1', '--socket-timeout', '15', url]),
+      PLAYLIST_TIMEOUT_MS,
+    ).catch((e) => { cancelJson(); throw e; });
     if (raw._type === 'playlist' && Array.isArray(raw.entries)) return asPlaylist(url, raw);
     return single(url, raw.formats ? raw : await ytDlpJson(['--dump-single-json', '--no-warnings', url]));
   }
 
-  // Single video: the rich yt-dlp probe is best, but its extraction can be rate-limited to 20s+.
-  // Kick off the fast fallback in parallel and hand it back if yt-dlp doesn't answer quickly, so
-  // pasting a link always shows options within a second or two.
-  const fastP = fastMedia(url).catch(() => null);
-  const richP = ytDlpJson(['--dump-single-json', '--no-warnings', '--no-playlist', url]);
-  richP.catch(() => { /* if the timeout wins, swallow the later rejection (no unhandled warning) */ });
+  // Single video: the real, accurate extraction. It runs behind the instant fast options, so a
+  // generous cap is fine — on timeout the fast options simply stay.
   try {
-    const full = await withTimeout(richP, PROBE_TIMEOUT_MS);
+    const full = await withTimeout(
+      ytDlpJson(['--dump-single-json', '--no-warnings', '--no-playlist', url]),
+      RICH_TIMEOUT_MS,
+    );
     if (full._type === 'playlist' && Array.isArray(full.entries)) return asPlaylist(url, full);
     return single(url, full);
-  } catch {
-    cancelJson(); // stop the slow yt-dlp if it's still grinding
-    const fast = await fastP;
-    if (fast) return fast;
-    // No fast data (odd site + oembed miss) → wait out the real probe rather than fail.
-    const full = await ytDlpJson(['--dump-single-json', '--no-warnings', '--no-playlist', url]);
-    return single(url, full);
+  } catch (e) {
+    cancelJson();
+    throw e;
   }
 }
 
