@@ -1,5 +1,58 @@
-import { ytDlpJson } from './tools';
+import { ytDlpJson, cancelJson } from './tools';
 import type { MediaInfo, MediaFormat, Subtitle } from '../shared/types';
+
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+
+// yt-dlp's extraction can be rate-limited to 20s+ on a hammered IP. Cap the wait, then hand back
+// fast generic options instead of hanging the "paste a link" screen.
+const PROBE_TIMEOUT_MS = 4000;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('probe-timeout')), ms)),
+  ]);
+}
+
+// Fast path: page title/uploader/thumbnail from oembed (one quick web request) plus a standard
+// quality ladder. The ids are yt-dlp format *selectors* (bestvideo[height<=N]), resolved at
+// download time — which stays fast even when the metadata probe is being throttled.
+async function fastMedia(url: string): Promise<MediaInfo> {
+  let title = 'Video', thumbnail = '', uploader = '';
+  try {
+    const r = await withTimeout(
+      fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, {
+        headers: { 'User-Agent': UA },
+      }),
+      3500,
+    );
+    if (r.ok) {
+      const j: any = await r.json();
+      title = j.title || title;
+      thumbnail = j.thumbnail_url || '';
+      uploader = j.author_name || '';
+    }
+  } catch { /* keep defaults — the options still work */ }
+
+  const video: MediaFormat[] = [1080, 720, 480, 360].map((h) => ({
+    id: `bestvideo[height<=${h}]`,
+    label: `${h}p`,
+    kind: 'video',
+    ext: 'mp4',
+    height: h,
+    note: h === 1080 ? 'best available' : undefined,
+  }));
+  const mp3: MediaFormat[] = [320, 192, 128].map((b) => ({
+    id: `mp3-${b}`, label: `MP3 ${b} kbps`, kind: 'audio', ext: 'mp3', bitrate: b, note: 'converted on this PC',
+  }));
+
+  return {
+    url, title, uploader, duration: 0, thumbnail,
+    formats: [...video, ...mp3],
+    subtitles: [], isPlaylist: false,
+  };
+}
 
 /**
  * Ask yt-dlp what a URL actually offers. Playlists come back as a list of entries the user
@@ -36,9 +89,24 @@ export async function probe(url: string): Promise<MediaInfo> {
     return single(url, raw.formats ? raw : await ytDlpJson(['--dump-single-json', '--no-warnings', url]));
   }
 
-  const full = await ytDlpJson(['--dump-single-json', '--no-warnings', '--no-playlist', url]);
-  if (full._type === 'playlist' && Array.isArray(full.entries)) return asPlaylist(url, full);
-  return single(url, full);
+  // Single video: the rich yt-dlp probe is best, but its extraction can be rate-limited to 20s+.
+  // Kick off the fast fallback in parallel and hand it back if yt-dlp doesn't answer quickly, so
+  // pasting a link always shows options within a second or two.
+  const fastP = fastMedia(url).catch(() => null);
+  const richP = ytDlpJson(['--dump-single-json', '--no-warnings', '--no-playlist', url]);
+  richP.catch(() => { /* if the timeout wins, swallow the later rejection (no unhandled warning) */ });
+  try {
+    const full = await withTimeout(richP, PROBE_TIMEOUT_MS);
+    if (full._type === 'playlist' && Array.isArray(full.entries)) return asPlaylist(url, full);
+    return single(url, full);
+  } catch {
+    cancelJson(); // stop the slow yt-dlp if it's still grinding
+    const fast = await fastP;
+    if (fast) return fast;
+    // No fast data (odd site + oembed miss) → wait out the real probe rather than fail.
+    const full = await ytDlpJson(['--dump-single-json', '--no-warnings', '--no-playlist', url]);
+    return single(url, full);
+  }
 }
 
 function single(url: string, j: any): MediaInfo {
