@@ -1,6 +1,7 @@
 import { ChildProcess } from 'child_process';
 import * as path from 'path';
 import { spawnYtDlp } from './tools';
+import { cobaltResolve, CobaltReq } from './cobalt';
 import type { DownloadItem, DownloadRequest, Settings, Phase } from '../shared/types';
 
 /**
@@ -190,12 +191,55 @@ export class DownloadQueue {
     return a;
   }
 
-  private start(item: DownloadItem) {
-    this.set(item.id, { phase: 'downloading', error: undefined });
+  // Ask Cobalt for a ready-to-download URL (its servers do the extraction, so this stays fast even
+  // when a local yt-dlp probe is being rate-limited). Returns download args for that URL, or null
+  // to fall back to yt-dlp. Skips cases Cobalt can't do (thumbnail, trim, subtitles).
+  private async cobaltArgs(item: DownloadItem): Promise<string[] | null> {
+    if (!this.settings.cobaltDownload) return null;   // off by default — direct yt-dlp is faster on a normal line
+    if (item.formatId === 'thumbnail') return null;
+    if (item.trimStart !== null || item.trimEnd !== null) return null;
+    if (item.subtitleLangs.length) return null;
 
+    let req: CobaltReq;
+    let ext: string;
+    if (item.formatId.startsWith('mp3-')) {
+      req = { audioOnly: true, audioFormat: 'mp3' }; ext = 'mp3';
+    } else if (item.audioOnly) {
+      req = { audioOnly: true, audioFormat: 'best' }; ext = 'm4a';
+    } else {
+      const m = item.formatId.match(/height<=(\d+)/);
+      req = { videoQuality: m ? m[1] : '1080' }; ext = 'mp4';
+    }
+
+    let tunnel: string | null = null;
+    try { tunnel = await cobaltResolve(item.url, req); } catch { return null; }
+    if (!tunnel) return null;
+
+    // Download the ready file directly — no extraction, no merge. Named from the title.
+    const safeTitle = (item.title || 'download').replace(/[/\\:*?"<>|]/g, '_').slice(0, 150).trim() || 'download';
+    const out = path.join(this.settings.downloadDir, `${safeTitle}.${ext}`);
+    return [
+      tunnel,
+      '-o', out,
+      '--newline', '--no-warnings', '--continue',
+      '--concurrent-fragments', String(Math.max(1, this.settings.connectionsPerDownload)),
+    ];
+  }
+
+  private async start(item: DownloadItem) {
+    this.set(item.id, { phase: 'downloading', error: undefined });
+    const cargs = await this.cobaltArgs(item);
+    // The item may have been paused/cancelled while we awaited Cobalt.
+    const cur = this.items.get(item.id);
+    if (!cur || cur.phase !== 'downloading') { this.pump(); return; }
+    if (cargs) this.spawnDownload(item, cargs, true);
+    else this.spawnDownload(item, this.args(item), false);
+  }
+
+  private spawnDownload(item: DownloadItem, args: string[], usedCobalt: boolean) {
     let child: ChildProcess;
     try {
-      child = spawnYtDlp(this.args(this.items.get(item.id)!));
+      child = spawnYtDlp(args, { noCookies: usedCobalt });
     } catch (e: any) {
       this.set(item.id, { phase: 'failed', error: e?.message || 'Could not start yt-dlp' });
       return;
@@ -224,6 +268,10 @@ export class DownloadQueue {
         this.set(item.id, { phase: 'done', progress: 1, speed: '', eta: '' });
       } else if (signal) {
         this.set(item.id, { phase: 'paused', speed: '', eta: '' });
+      } else if (usedCobalt) {
+        // The Cobalt URL failed to download — fall back to a full yt-dlp download.
+        this.set(item.id, { phase: 'downloading', progress: 0, error: undefined });
+        this.spawnDownload(item, this.args(item), false);
       } else {
         this.set(item.id, { phase: 'failed', error: cleanError(lastErr) || `yt-dlp exited with code ${code}` });
       }

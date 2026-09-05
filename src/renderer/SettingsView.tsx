@@ -84,6 +84,11 @@ export function SettingsView({ settings, onChange, tools, premium, onUpsell }: {
             onChange={(e) => set('minimiseToTray', e.target.checked)} />
           <span>Keep running in the tray when the window is closed</span>
         </label>
+        <label className="check">
+          <input type="checkbox" checked={settings.cobaltDownload}
+            onChange={(e) => set('cobaltDownload', e.target.checked)} />
+          <span>Faster start on a slow/blocked connection (via Cobalt) — turn off on a fast line</span>
+        </label>
 
         <div className="opts" style={{ marginTop: 10 }}>
           <div className="opt">

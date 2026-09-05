@@ -87,6 +87,10 @@ export interface Settings {
   /** Read the YouTube login from this browser (Premium) so members-only videos, age-restricted
    *  and Premium-quality streams download. '' = off. */
   ytCookies: '' | 'chrome' | 'edge' | 'brave' | 'firefox' | 'opera' | 'vivaldi' | 'safari';
+  /** Route downloads through a Cobalt server. Starts instantly even when this IP is rate-limited
+   *  by YouTube, but the bytes come via a proxy (slower) — best ON only for a throttled/blocked
+   *  connection, OFF for a normal one (where direct yt-dlp is faster). */
+  cobaltDownload: boolean;
 }
 
 /** Browsers yt-dlp can read cookies from. */
@@ -104,6 +108,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   defaultContainer: 'auto',
   ytCookies: '',
+  cobaltDownload: false,
 };
 
 /** Links we offer to fetch when they appear on the clipboard. */
