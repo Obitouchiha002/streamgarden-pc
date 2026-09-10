@@ -201,6 +201,24 @@ ipcMain.handle('admin:checkin', async () => {
 ipcMain.handle('admin:device', () => ({ id: deviceId(), name: deviceName() }));
 ipcMain.handle('admin:claimName', (_e, name: string) => claimName(name));
 
+ipcMain.handle('app:version', () => app.getVersion());
+
+// In-app update: download the new installer and launch it, then quit so it can replace the app.
+ipcMain.handle('update:install', async (_e, url: string) => {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`download failed (${res.status})`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const tmp = path.join(app.getPath('temp'), 'StreamGarden-Setup.exe');
+    fs.writeFileSync(tmp, buf);
+    await shell.openPath(tmp);           // runs the NSIS installer
+    setTimeout(() => app.quit(), 1500);  // let the installer take over
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'update failed' };
+  }
+});
+
 ipcMain.handle('queue:add', (_e, req: DownloadRequest) => queue.add(req));
 ipcMain.handle('queue:all', () => queue.all());
 ipcMain.handle('queue:pause', (_e, id: string) => queue.pause(id));

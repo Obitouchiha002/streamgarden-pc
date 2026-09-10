@@ -15,6 +15,18 @@ import { MediaPanel } from './MediaPanel';
 const sg = window.sg;
 type Tab = 'get' | 'queue' | 'transcript' | 'settings';
 
+/** true if version string `latest` is higher than `cur` (dotted numbers; non-numeric = no update). */
+function isVersionNewer(latest: string, cur: string): boolean {
+  const a = latest.split('.').map((n) => parseInt(n, 10));
+  const b = cur.split('.').map((n) => parseInt(n, 10));
+  if (a.some(Number.isNaN)) return false;   // e.g. "New version 1.3" — ignore
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] || 0) > (b[i] || 0)) return true;
+    if ((a[i] || 0) < (b[i] || 0)) return false;
+  }
+  return false;
+}
+
 /**
  * Pull every supported link out of a blob of text. Pasting ten links at once — whether
  * they arrive on separate lines or all on one, since a single-line input flattens newlines
@@ -75,6 +87,9 @@ export default function App() {
   const [acctPw, setAcctPw] = useState('');
   const [acctBusy, setAcctBusy] = useState(false);
   const [acctMsg, setAcctMsg] = useState('');
+  // In-app update (Windows): download + run the new installer from inside the app.
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; url: string } | null>(null);
+  const [updating, setUpdating] = useState(false);
   const [batchKind, setBatchKind] = useState<'video' | 'mp3'>('video');
   // Guards the welcome screen: without it the app flashes it before settings arrive.
   const [loaded, setLoaded] = useState(false);
@@ -89,9 +104,16 @@ export default function App() {
     sg.queue.all().then(setItems);
     sg.toolStatus().then(setTools);
     // Register this PC with the same dashboard the phones report to.
-    sg.admin.checkin().then((r) => {
+    sg.admin.checkin().then(async (r) => {
       if (r.blocked) setBlocked({ reason: r.reason, code: r.code, until: r.until, updateUrl: r.update_url });
       setPremium(r.premium || account.isAcctPremium());
+      // In-app update: if the backend's Windows "latest" is newer than this build, offer it.
+      try {
+        const cur = await sg.version();
+        if (r.latest_version && isVersionNewer(r.latest_version, cur)) {
+          setUpdateInfo({ version: r.latest_version, url: `https://github.com/Obitouchiha002/streamgarden-pc/releases/download/v${r.latest_version}/StreamGarden-Setup.exe` });
+        }
+      } catch { /* ignore */ }
     }).catch(() => { /* fail open — a backend problem must not stop the app */ });
     // Account-based premium (follows the email across devices).
     account.refreshStatus().then((st) => { setAcct(st); if (st?.premium) setPremium(true); }).catch(() => {});
@@ -230,6 +252,13 @@ export default function App() {
     if (r.ok) { setAcctPw(''); await loadAcct(); } else setAcctMsg(r.error || 'Could not create account');
   };
   const doSignOut = () => { account.signOut(); setAcct(null); setAcctEmail(''); setAcctPw(''); };
+  const doUpdate = async () => {
+    if (!updateInfo) return;
+    setUpdating(true); setAcctMsg('Downloading update…');
+    const r = await sg.update.install(updateInfo.url);
+    if (!r.ok) { setUpdating(false); setAcctMsg('Update failed — ' + (r.error || 'try again')); }
+    // On success the installer launches and the app quits.
+  };
 
   // Queue every link at once. No probing — 'best' and 'mp3-192' don't need a format list,
   // so ten links become ten queued items instantly and the queue runs them maxParallel at
@@ -367,7 +396,7 @@ export default function App() {
           <NavItem icon={<ListVideo />} label="Downloads" on={tab === 'queue'} onClick={() => setTab('queue')}
             count={active || undefined} />
           <NavItem icon={<FileText />} label="Transcript" on={tab === 'transcript'} onClick={() => setTab('transcript')} />
-          <NavItem icon={(premium ? <Crown /> : <User />)} label={account.isSignedIn() ? (acct?.name || 'Account') : 'Sign in'} on={false} onClick={() => { setAcctMsg(''); setShowAccount(true); }} />
+          <NavItem icon={(updateInfo ? <Sparkles /> : premium ? <Crown /> : <User />)} label={updateInfo ? `Update to v${updateInfo.version}` : account.isSignedIn() ? (acct?.name || 'Account') : 'Sign in'} on={false} onClick={() => { setAcctMsg(''); setShowAccount(true); }} />
           <NavItem icon={<SettingsIcon />} label="Settings" on={tab === 'settings'} onClick={() => setTab('settings')} />
 
           <div className="sidebar-foot">
@@ -571,6 +600,11 @@ export default function App() {
         <div className="modal-veil" onClick={() => setShowAccount(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <button className="btn-icon modal-x" onClick={() => setShowAccount(false)} aria-label="Close"><X /></button>
+            {updateInfo && (
+              <button className="btn btn-primary" disabled={updating} onClick={doUpdate} style={{ marginBottom: 10 }}>
+                <Sparkles style={{ width: 15, height: 15 }} /> {updating ? 'Updating…' : `Update to v${updateInfo.version}`}
+              </button>
+            )}
             {account.isSignedIn() ? (
               <>
                 <span className="mark" style={{ width: 44, height: 44, borderRadius: 13 }}>

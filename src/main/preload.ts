@@ -38,6 +38,11 @@ const api = {
       ipcRenderer.invoke('admin:claimName', name),
   },
 
+  version: (): Promise<string> => ipcRenderer.invoke('app:version'),
+  update: {
+    install: (url: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('update:install', url),
+  },
+
   queue: {
     add: (req: DownloadRequest): Promise<DownloadItem> => ipcRenderer.invoke('queue:add', req),
     all: (): Promise<DownloadItem[]> => ipcRenderer.invoke('queue:all'),
