@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Download, ListVideo, Settings as SettingsIcon, Search, Loader2, X,
   Film, AlertTriangle, ClipboardCheck, Minus, Square, ShieldAlert, Lock, Sparkles, Check, FileText,
+  User, Crown, LogOut,
 } from 'lucide-react';
 import { TranscriptView } from './TranscriptView';
 import type { DownloadItem, DownloadRequest, MediaInfo, Settings } from '../shared/types';
 import { DEFAULT_SETTINGS, isSupportedUrl } from '../shared/types';
 import { QueueView } from './Queue';
 import { SettingsView } from './SettingsView';
+import * as account from './account';
 import { MediaPanel } from './MediaPanel';
 
 const sg = window.sg;
@@ -66,6 +68,13 @@ export default function App() {
   const [claiming, setClaiming] = useState(false);
   const [premium, setPremium] = useState(false);
   const [upsell, setUpsell] = useState(false);
+  // Account (email + password) — Premium follows the account. Buy happens on the website.
+  const [showAccount, setShowAccount] = useState(false);
+  const [acct, setAcct] = useState<account.Status | null>(null);
+  const [acctEmail, setAcctEmail] = useState('');
+  const [acctPw, setAcctPw] = useState('');
+  const [acctBusy, setAcctBusy] = useState(false);
+  const [acctMsg, setAcctMsg] = useState('');
   const [batchKind, setBatchKind] = useState<'video' | 'mp3'>('video');
   // Guards the welcome screen: without it the app flashes it before settings arrive.
   const [loaded, setLoaded] = useState(false);
@@ -82,8 +91,10 @@ export default function App() {
     // Register this PC with the same dashboard the phones report to.
     sg.admin.checkin().then((r) => {
       if (r.blocked) setBlocked({ reason: r.reason, code: r.code, until: r.until, updateUrl: r.update_url });
-      setPremium(r.premium);
+      setPremium(r.premium || account.isAcctPremium());
     }).catch(() => { /* fail open — a backend problem must not stop the app */ });
+    // Account-based premium (follows the email across devices).
+    account.refreshStatus().then((st) => { setAcct(st); if (st?.premium) setPremium(true); }).catch(() => {});
   }, []);
 
   // Live queue updates: one item at a time, patched in place.
@@ -190,9 +201,35 @@ export default function App() {
   };
 
   const enqueue = async (req: DownloadRequest) => {
+    // Downloading needs an account; free users have a daily quota.
+    const gate = account.canDownload(premium);
+    if (!gate.ok) {
+      setAcctMsg(gate.reason === 'login' ? 'Sign in to download.' : `Free daily limit (${account.FREE_DAILY_LIMIT}) reached — go Premium for unlimited.`);
+      setShowAccount(true);
+      return;
+    }
     await sg.queue.add(req);
+    account.bumpDaily();
     setTab('queue');
   };
+
+  // Account actions.
+  const loadAcct = async () => { const st = await account.refreshStatus(); setAcct(st); if (st?.premium) setPremium(true); };
+  const doSignIn = async () => {
+    if (!acctEmail.trim() || !acctPw) { setAcctMsg('Email + password'); return; }
+    setAcctBusy(true); setAcctMsg('');
+    const r = await account.signIn(acctEmail.trim(), acctPw);
+    setAcctBusy(false);
+    if (r.ok) { setAcctPw(''); await loadAcct(); } else setAcctMsg(r.error || 'Sign in failed');
+  };
+  const doSignUp = async () => {
+    if (!acctEmail.trim() || acctPw.length < 6) { setAcctMsg('Email + 6+ char password'); return; }
+    setAcctBusy(true); setAcctMsg('');
+    const r = await account.signUp(acctEmail.trim(), acctPw);
+    setAcctBusy(false);
+    if (r.ok) { setAcctPw(''); await loadAcct(); } else setAcctMsg(r.error || 'Could not create account');
+  };
+  const doSignOut = () => { account.signOut(); setAcct(null); setAcctEmail(''); setAcctPw(''); };
 
   // Queue every link at once. No probing — 'best' and 'mp3-192' don't need a format list,
   // so ten links become ten queued items instantly and the queue runs them maxParallel at
@@ -330,6 +367,7 @@ export default function App() {
           <NavItem icon={<ListVideo />} label="Downloads" on={tab === 'queue'} onClick={() => setTab('queue')}
             count={active || undefined} />
           <NavItem icon={<FileText />} label="Transcript" on={tab === 'transcript'} onClick={() => setTab('transcript')} />
+          <NavItem icon={(premium ? <Crown /> : <User />)} label={account.isSignedIn() ? (acct?.name || 'Account') : 'Sign in'} on={false} onClick={() => { setAcctMsg(''); setShowAccount(true); }} />
           <NavItem icon={<SettingsIcon />} label="Settings" on={tab === 'settings'} onClick={() => setTab('settings')} />
 
           <div className="sidebar-foot">
@@ -520,11 +558,58 @@ export default function App() {
               <li><Check style={{ width: 15, height: 15, color: 'var(--sage)' }} /> No filename branding</li>
             </ul>
             <div className="gap" style={{ marginTop: 16 }}>
-              <button className="btn btn-primary" onClick={() => { sg.openExternal('https://streamgd.lzworth.in/#premium'); setUpsell(false); }}>
-                <Sparkles style={{ width: 15, height: 15 }} /> Get Premium — ₹99
+              <button className="btn btn-primary" onClick={() => { sg.openExternal('https://streamgd.lzworth.in/account.html'); setUpsell(false); }}>
+                <Sparkles style={{ width: 15, height: 15 }} /> Get Premium — ₹99/year
               </button>
               <button className="btn btn-ghost" onClick={() => setUpsell(false)}>Not now</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showAccount && (
+        <div className="modal-veil" onClick={() => setShowAccount(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <button className="btn-icon modal-x" onClick={() => setShowAccount(false)} aria-label="Close"><X /></button>
+            {account.isSignedIn() ? (
+              <>
+                <span className="mark" style={{ width: 44, height: 44, borderRadius: 13 }}>
+                  {premium ? <Crown style={{ width: 22, height: 22, color: '#12160B' }} /> : <User style={{ width: 22, height: 22, color: '#12160B' }} />}
+                </span>
+                <h2 style={{ marginTop: 12 }}>Welcome, {acct?.name || 'you'}</h2>
+                <p className="sub">{acct?.email || account.currentUser()?.email}</p>
+                <div className="row" style={{ justifyContent: 'space-between', marginTop: 14 }}>
+                  <span className="sub">Plan</span>
+                  <span className="pill" style={premium ? { background: 'rgba(224,178,76,.16)', color: '#E0B24C' } : {}}>{premium ? 'Premium' : 'Free'}</span>
+                </div>
+                {premium && acct?.premium_until && <p className="sub" style={{ marginTop: 6 }}>Valid till {new Date(acct.premium_until).toLocaleDateString()}</p>}
+                {!premium && <p className="sub" style={{ marginTop: 6 }}>{account.dailyCount()}/{account.FREE_DAILY_LIMIT} free downloads today · Premium = unlimited + 4K + MP3</p>}
+                <div className="gap" style={{ marginTop: 16 }}>
+                  {!premium && (
+                    <button className="btn btn-primary" onClick={() => sg.openExternal('https://streamgd.lzworth.in/account.html')}>
+                      <Crown style={{ width: 15, height: 15 }} /> Get Premium — ₹99/year
+                    </button>
+                  )}
+                  <button className="btn btn-ghost" onClick={doSignOut}><LogOut style={{ width: 15, height: 15 }} /> Sign out</button>
+                </div>
+                {acctMsg && <p className="sub" style={{ color: '#FF6B5E', marginTop: 8 }}>{acctMsg}</p>}
+              </>
+            ) : (
+              <>
+                <h2 style={{ marginTop: 4 }}>Sign in</h2>
+                <p className="sub" style={{ maxWidth: '34ch' }}>Premium follows your account — buy once, use it on phone, PC and Mac.</p>
+                {acctMsg && <p className="sub" style={{ color: '#FF6B5E', marginTop: 8 }}>{acctMsg}</p>}
+                <input type="email" placeholder="you@email.com" value={acctEmail} onChange={(e) => setAcctEmail(e.target.value)}
+                  style={{ width: '100%', marginTop: 12, padding: '11px 13px', borderRadius: 11, border: '1px solid var(--line, rgba(255,255,255,.12))', background: 'transparent', color: 'inherit', outline: 'none', fontSize: 15 }} />
+                <input type="password" placeholder="Password (min 6)" value={acctPw} onChange={(e) => setAcctPw(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') doSignIn(); }}
+                  style={{ width: '100%', marginTop: 8, padding: '11px 13px', borderRadius: 11, border: '1px solid var(--line, rgba(255,255,255,.12))', background: 'transparent', color: 'inherit', outline: 'none', fontSize: 15 }} />
+                <div className="gap" style={{ marginTop: 14 }}>
+                  <button className="btn btn-primary" disabled={acctBusy} onClick={doSignIn}>{acctBusy ? 'Signing in…' : 'Sign in'}</button>
+                  <button className="btn btn-ghost" disabled={acctBusy} onClick={doSignUp}>Create account</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
